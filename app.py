@@ -410,15 +410,39 @@ if page == "野王時間表":
     # --- 2. 定義表格函式 (自動導向當日) ---
     def render_table(area_key, schedules_dict):
         week_map = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-        now = datetime.now()
+
+        # 1. 修正時區：確保網頁知道現在是台灣幾點
+        tw_tz = pytz.timezone('Asia/Taipei')
+        now = datetime.now(tw_tz)
         today_idx = now.weekday()
         today_str = week_map[today_idx]
 
         st.subheader(f"✨ {area_key}")
 
-        # 選擇日期 (內部邏輯維持 星期一~星期日 以對應資料庫，但顯示會自動選到今天)
         view_day = today_str
-        data_list = schedules_dict.get(view_day, [])
+
+        # 2. 安全抓取資料：解決之前 list get 的紅字錯誤
+        if isinstance(schedules_dict, dict):
+            raw_data_list = schedules_dict.get(view_day, [])
+        else:
+            raw_data_list = schedules_dict
+
+        # 3. 關鍵過濾：讓已過去的時間（超過 5 分鐘）自動消失
+        data_list = []
+        for row in raw_data_list:
+            s_time = row[0]
+            try:
+                target_time = datetime.strptime(s_time, "%H:%M").replace(
+                    year=now.year, month=now.month, day=now.day
+                )
+                target_time = tw_tz.localize(target_time)
+                diff = (target_time - now).total_seconds() / 60
+
+                # 如果還沒過期，才放進要顯示的 data_list
+                if diff >= -5:
+                    data_list.append(row)
+            except:
+                data_list.append(row)
 
         # 下拉選單配置
         location_options = {"仙幻島": ["知性森林", "武神荒野", "力王山脈"],
