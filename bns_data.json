@@ -1,5 +1,5 @@
 {
-    "expire_date": "2026-03-31",
+    "expire_date": "2026-03-25",
     "boss_data": {
         "1 頻": {
             "last_death": null,
@@ -8,7 +8,7 @@
             "history_stats": []
         },
         "2 頻": {
-            "last_death": "2026-02-26T00:27:43.766376",
+            "last_death": null,
             "history": null,
             "auto_delay_hours": 0,
             "history_stats": []
@@ -35,20 +35,9 @@
         "blue_pierce": 0,
         "spec_atk": 0
     },
-    "loc_notes": {
-        "note_0": ""
-    },
+    "loc_notes": {},
     "schedules": {
-        "仙幻島": {
-            "星期四": [
-                [
-                    "00:00",
-                    "知性森林",
-                    "note_0",
-                    false
-                ]
-            ]
-        },
+        "仙幻島": [],
         "白青": [],
         "儀式": {
             "星期一": [],
@@ -56,7 +45,14 @@
             "星期三": [],
             "星期四": [
                 [
-                    "00:00",
+                    "20:00",
+                    "???",
+                    "",
+                    "???",
+                    false
+                ],
+                [
+                    "21:00",
                     "???",
                     "",
                     "???",

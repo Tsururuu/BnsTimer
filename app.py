@@ -674,13 +674,16 @@ elif page == "儀式時間表":
     LOC_OPTS = ["???", "黑森林", "巨岩谷", "孤村", "土門客棧", "悲鳴村", "灰狼村", "海岸客棧", "鬼都", "北方雪原",
                 "染坊"]
     week_list = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-    now = datetime.now()
-    today_week = week_list[datetime.now().weekday()]
+    # ✅ 強制設定台灣時區 (解決時差問題)
+    tw_tz = pytz.timezone('Asia/Taipei')
+    now_t = datetime.now(tw_tz)
+    today_week = week_list[now_t.weekday()]
+    now_str = now_t.strftime("%H:%M")
+
     HOURS = [f"{i:02d}" for i in range(24)]
     MINS = [f"{i:02d}" for i in range(60)]
 
     # --- 3. 管理員編輯區 (修復新增/刪除/儲存) ---
-
     if st.session_state.get("is_admin", False):
         with st.expander("🛠️ 編輯儀式", expanded=False):
             # 這裡的 sel_week 僅供管理員切換
@@ -793,8 +796,6 @@ elif page == "儀式時間表":
     st.markdown(f"### ✨️ 儀式")
     # 取得當天資料並排序
     day_sched = sorted(schedules_dict["儀式"].get(sel_week, []), key=lambda x: x[0])
-    now_t = datetime.now()
-    now_str = now_t.strftime("%H:%M")
 
     # 建立左右兩欄
     col_left, col_right = st.columns([1, 1])
@@ -809,16 +810,25 @@ elif page == "儀式時間表":
         # 僅在選擇的日期是今天時判斷重生狀態
         if sel_week == today_week:
             for r in day_sched:
+                is_spawning = False
+                is_future = False
                 try:
-                    start_dt = datetime.strptime(r[0], "%H:%M").replace(
+                    # ✅ 正確轉換時間比對 (使用台灣時區)
+                    target_dt = datetime.strptime(r[0], "%H:%M").replace(
                         year=now_t.year, month=now_t.month, day=now_t.day
                     )
-                    # 重生中判定 (5分鐘內)
-                    is_spawning = start_dt <= now_t <= (start_dt + timedelta(minutes=5))
-                except:
-                    is_spawning = False
+                    target_dt = tw_tz.localize(target_dt)
 
-                if r[0] > now_str or is_spawning:
+                    # 計算分鐘差
+                    diff = (target_dt - now_t).total_seconds() / 60
+                    # ✅ 判定條件：重生中 (0 到 -5 分鐘) 或 未來場次
+                    is_spawning = -5 <= diff <= 0
+                    is_future = diff > 0
+                except Exception as e:
+                    # ✅ 這裡必須有 except 塊，try 才能結束
+                    continue
+
+                if is_spawning or is_future:
                     q_text = " (?)" if len(r) > 4 and r[4] else ""
                     loc_display = f"{r[1]} / {r[3]}" if (len(r) > 3 and r[3] != "???") else r[1]
 
@@ -842,7 +852,7 @@ elif page == "儀式時間表":
                         </div>
                         """, unsafe_allow_html=True)
                     upcoming_found = True
-                    break
+                    break  # 找到最近的一場後跳出迴圈
 
         if not upcoming_found:
             st.info("目前無即將到來的儀式")
@@ -857,6 +867,16 @@ elif page == "儀式時間表":
                     q_m = " (?)" if len(r) > 4 and r[4] else ""
                     l_d = f"{r[1]} / {r[3]}" if (len(r) > 3 and r[3] != "???") else r[1]
 
+                    # ✅ 判定是否已過期 (過期則字體變淡)
+                    try:
+                        target_t = datetime.strptime(r[0], "%H:%M").time()
+                        is_past = target_t < now_t.time() and not (-5 <= (
+                                    datetime.combine(now_t.date(), target_t).replace(
+                                        tzinfo=tw_tz) - now_t).total_seconds() / 60 <= 0)
+                    except:
+                        is_past = False
+
+                    opacity = "0.4" if is_past else "1.0"
                     # 列表顯示
                     st.markdown(f"""
                         <div style="padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between;">
