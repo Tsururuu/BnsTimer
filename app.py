@@ -418,51 +418,44 @@ if page == "野王時間表":
         today_str = week_map[today_idx]
 
         st.subheader(f"✨ {area_key}")
-
         view_day = today_str
 
         # 2. 安全抓取資料：解決之前 list get 的紅字錯誤
         if isinstance(schedules_dict, dict):
             raw_data_list = schedules_dict.get(view_day, [])
         else:
-            raw_data_list = schedules_dict
+            raw_data_list = schedules_dict if isinstance(schedules_dict, list) else []
 
-        # 3. 關鍵過濾：讓已過去的時間（超過 5 分鐘）自動消失
-        data_list = []
-        for row in raw_data_list:
-            s_time = row[0]
-            try:
-                target_time = datetime.strptime(s_time, "%H:%M").replace(
-                    year=now.year, month=now.month, day=now.day
-                )
-                target_time = tw_tz.localize(target_time)
-                diff = (target_time - now).total_seconds() / 60
+        # 建立全天完整排序表 (給下方展開選單用)
+        sorted_all_day = sorted(raw_data_list, key=lambda x: x[0])
 
-                # 如果還沒過期，才放進要顯示的 data_list
-                if diff >= -5:
-                    data_list.append(row)
-            except:
-                data_list.append(row)
-
-        # 下拉選單配置
-        location_options = {"仙幻島": ["知性森林", "武神荒野", "力王山脈"],
-                            "白青": ["白樺林", "風之平原"]}
+        # 管理員選單配置
+        location_options = {"仙幻島": ["知性森林", "武神荒野", "力王山脈"], "白青": ["白樺林", "風之平原"]}
         options = location_options.get(area_key, ["新地點"])
-        min_options = [f"{i:02d}" for i in range(60)];
+        min_options = [f"{i:02d}" for i in range(60)]
         hour_options = [f"{i:02d}" for i in range(24)]
 
         # --- 管理員：編輯功能 ---
         if st.session_state.is_admin:
             with st.expander(f"🛠️ 編輯 {area_key}"):
                 day_options = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-                target_day = st.radio("選擇要編輯的日期：", day_options,
-                                      index=day_options.index(view_day),
-                                      horizontal=True, key=f"edit_day_selector_{area_key}")
+                target_day = st.radio("選擇日期：", day_options, index=day_options.index(view_day), horizontal=True,
+                                      key=f"edit_day_{area_key}")
 
                 st.divider()
-                # ✅ 關鍵修復：重新抓取目標日期的資料清單，而不是用原本的 data_list
-                current_edit_list = st.session_state.schedules[area_key].get(target_day, [])
-                updated_list = []
+                # ✅ 1. 先定義資料來源 (必須在 if 使用它之前)
+                area_data_source = st.session_state.schedules.get(area_key, {})
+                # ✅ 2. 判斷型態並取得當前編輯清單 (解決 image_bec800 的問題)
+                if isinstance(area_data_source, dict):
+                    current_edit_list = area_data_source.get(target_day, [])
+                elif isinstance(area_data_source, list):
+                    current_edit_list = area_data_source
+                else:
+                    # 萬一兩者都不是，給一個空列表防止後續出錯
+                    current_edit_list = []
+
+                updated_list = []# 建立全天完整排序表 (給下方展開選單用)
+
 
                 for i, row in enumerate(current_edit_list):
                     c1, c2, c_ask, c3, c4, c5 = st.columns([0.5, 0.5, 0.4, 0.9, 0.5, 0.3])
@@ -507,6 +500,10 @@ if page == "野王時間表":
                 with col_btn1:
                     if st.button(f"➕ 新增 {target_day} 時段", key=f"add_{area_key}_{target_day}",
                  use_container_width=True):
+                        # ✅ 安全取得區域資料 (確保它是字典)
+                        if area_key not in st.session_state.schedules or not isinstance(
+                                st.session_state.schedules[area_key], dict):
+                            st.session_state.schedules[area_key] = {}
                         current_data = st.session_state.schedules[area_key].get(target_day, [])
                         current_data.append(["00:00", options[0], f"note_{len(current_data)}", False])
                         st.session_state.schedules[area_key][target_day] = current_data
@@ -514,6 +511,10 @@ if page == "野王時間表":
                         st.rerun()
                 with col_btn2:
                     if st.button(f"💾 儲存 {target_day} 變更", key=f"save_{area_key}_{target_day}", type="primary", use_container_width=True):
+                        # ✅ 儲存時同樣確保結構正確
+                        if area_key not in st.session_state.schedules or not isinstance(
+                                st.session_state.schedules[area_key], dict):
+                            st.session_state.schedules[area_key] = {}
                         st.session_state.schedules[area_key][target_day] = sorted(updated_list, key=lambda x: x[0])
                         save_data()
                         st.rerun()
@@ -521,17 +522,15 @@ if page == "野王時間表":
                 # --- ✨ 野王專用：管理員全週大表對帳區 ---
                 st.divider()
                 with st.expander(f"📋 管理員校對：{area_key} 野王全週總覽", expanded=False):
-                    # 建立週一到週日的分頁
-                    # 這裡的 week_map 如果你上面已經定義過就直接用，沒定義就用下面這行
-                    day_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-                    tabs = st.tabs(day_names)
-
+                    tabs = st.tabs(day_options)
                     for i, tab in enumerate(tabs):
-                        day_name = day_names[i]
+                        day_name = day_options[i]
                         with tab:
-                            # ✅ 修正點：直接從傳入的 schedules_dict 抓取星期即可
-                            # 因為 render_table(area_key, schedules_dict) 傳進來的 schedules_dict 已經是該區域的內容了
-                            area_day_data = schedules_dict.get(day_name, [])
+                            # ✅ 安全修正校對資料抓取
+                            if isinstance(area_data_source, dict):
+                                area_day_data = area_data_source.get(day_name, [])
+                            else:
+                                area_day_data = area_data_source if day_name == view_day else []
 
                             if area_day_data:
                                 # 排序時間 (過濾掉空行防止報錯)
@@ -566,25 +565,25 @@ if page == "野王時間表":
                                 st.caption(f"🍵 {day_name} 目前無野王排程")
 
         # --- 前台顯示：頂部 3 場 ---
-        sorted_data = sorted(data_list, key=lambda x: x[0])
         st.markdown(f"**🔥 {view_day} 即將重生 (前三場)**")
-
         upcoming_rows = ""
         display_count = 0
-        for i, row in enumerate(sorted_data):
-            s_time = row[0]
-            # st.write(row)
+        # 這裡我們用完整清單來跑迴圈，但在裡面判斷「是否顯示在預報區」
+        for row in sorted_all_day:
             s_time, loc = row[0], row[1]
             is_unsure = row[3] if len(row) > 3 else False
-            time_display_html = s_time #定義時間顯示的樣式：若不確定則變色並加問號
-            if is_unsure:
-                time_display_html = f"<span style='color: #b87012'>{s_time} (?)</span>"
+            time_display_html = f"<span style='color: #b87012'>{s_time} (?)</span>" if is_unsure else s_time
+
             try:
                 target = datetime.strptime(s_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+                target = tw_tz.localize(target)
                 diff = (target - now).total_seconds() / 60
+
+                # 僅顯示「尚未結束」的場次，最多 3 場
                 if diff > -5 and display_count < 3:
                     note = st.session_state.loc_notes.get(row[2] if len(row) > 2 else "", "")
                     s = {"bg": "rgba(255,255,255,0.05)", "c": "white", "txt": "等待中", "sh": "none"}
+
                     if view_day == today_str:
                         if -5 <= diff <= 0:
                             s.update({"bg": "#a63030", "txt": "🚨 重生中", "sh": "0px 0px 20px #a63030"})
@@ -593,17 +592,17 @@ if page == "野王時間表":
                                 {"bg": "#d1ba3d", "c": "black", "txt": "🔥 下一隻預備", "sh": "0px 0px 20px #d1ba3d"})
 
                     upcoming_rows += f"""
-                    <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
-                        <td style="padding:20px; font-weight:bold; width:100px;">{time_display_html}</td>
-                        <td style="padding:12px;">{loc}<br><small style="color:#c7ffc7; opacity:0.8;">{note}</small></td>
-                        <td style="padding:20px; text-align:right; font-weight:bold;">{s['txt']}</td>
-                    </tr>"""
+                        <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
+                            <td style="padding:20px; font-weight:bold; width:100px;">{time_display_html}</td>
+                            <td style="padding:12px;">{loc}<br><small style="color:#c7ffc7; opacity:0.8;">{note}</small></td>
+                            <td style="padding:20px; text-align:right; font-weight:bold;">{s['txt']}</td>
+                        </tr>"""
                     display_count += 1
             except:
                 continue
 
         if upcoming_rows:
-            components.html(
+            st.components.v1.html(
                 f'<div style="background:#1e1e26; border-radius:10px; padding:5px;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{upcoming_rows}</table></div>',
                 height=240)
         else:
@@ -611,23 +610,14 @@ if page == "野王時間表":
 
         with st.expander(f"📅 查看 {view_day} 全天完整時間表"):
             all_day_html_list = []
-            for r in sorted_data:
-                t_str = r[0]
-                # ✅ 如果有勾選問號，這裡也同步顯示變色標記
-                if len(r) > 3 and r[3]:
-                    t_str = f"<span style='color: #b87012; font-weight: bold;'>{t_str} (?)</span>"
-
+            # ✅ 使用 sorted_all_day 確保所有時間都在，不會因為過期消失
+            for r in sorted_all_day:
+                t_str = f"<span style='color: #b87012; font-weight: bold;'>{r[0]} (?)</span>" if (
+                            len(r) > 3 and r[3]) else r[0]
                 note_text = st.session_state.loc_notes.get(r[2] if len(r) > 2 else "", "")
-                row_html = f"""
-                <tr style="border-bottom:1px solid #333; color:#ccc;">
-                    <td style="padding:10px; width:100px; font-weight:bold; white-space:nowrap;">{t_str}</td>
-                    <td style="padding:10px; text-align:left;">{r[1]}
-                        <span style="font-size:12px; color:#888; margin-left:15px;">{note_text}</span>
-                    </td>
-                </tr>"""
-                all_day_html_list.append(row_html)  # 逐行加入
+                row_html = f'<tr style="border-bottom:1px solid #333; color:#ccc;"><td style="padding:10px; width:100px; font-weight:bold;">{t_str}</td><td style="padding:10px;">{r[1]} <span style="font-size:12px; color:#888; margin-left:15px;">{note_text}</span></td></tr>'
+                all_day_html_list.append(row_html)
 
-                # ✅ 關鍵：將清單轉為字串，不要再寫一次 for 迴圈
             all_day_rows_final = "".join(all_day_html_list)
             if all_day_rows_final:
                 components.html(
