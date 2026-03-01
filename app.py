@@ -243,54 +243,66 @@ st.markdown("""
     }
 /* 1. 確保整體容器不溢出 */
     .stMainBlockContainer {
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
 
-    /* 2. 補報區專用容器：防止掉出框外 */
+    /* 2. 補報區專用容器：模擬框框效果並強制水平 */
     .manual-time-container {
         width: 100% !important;
         display: flex !important;
+        flex-direction: row !important; /* 強制橫向 */
+        flex-wrap: nowrap !important;    /* 絕對不准換行 */
         align-items: center !important;
-        justify-content: space-between !important;
-        background: rgba(255, 255, 255, 0.05); /* 淡淡的底色方便辨識範圍 */
-        padding: 5px;
-        border-radius: 8px;
+        justify-content: center !important;
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid #464855 !important; /* 加上跟原本一樣的框框線 */
+        padding: 4px 2px !important;
+        border-radius: 8px !important;
+        gap: 2px !important; /* 元件之間的間距 */
     }
 
-    /* 3. 強制鎖定 Selectbox 的寬度，不讓它撐開容器 */
+    /* 3. 鎖定 Selectbox 寬度：縮小到 60-65px 才能在三頻並排時塞下 */
     .manual-time-container [data-testid="stSelectbox"] {
-        width: 75px !important;
-        min-width: 75px !important;
+        width: 62px !important;
+        min-width: 62px !important;
         flex: none !important;
     }
 
-    /* 4. 暴力隱藏 Selectbox 箭頭與多餘邊距 (讓空間變大) */
+    /* 4. 暴力隱藏 Selectbox 箭頭與多餘邊距 */
     .manual-time-container [data-testid="stSelectbox"] svg {
         display: none !important;
     }
-    .manual-time-container [data-testid="stSelectbox"] [role="button"] {
+    .manual-time-container [data-testid="stSelectbox"] div[data-baseweb="select"] {
         padding-right: 0 !important;
+    }
+    .manual-time-container [data-testid="stSelectbox"] [role="button"] {
+        padding: 0 !important;
         text-align: center !important;
+        font-size: 14px !important;
     }
 
-    /* 5. 冒號對齊 */
+    /* 5. 冒號對齊：縮小間距 */
     .time-sep {
         color: #00ffcc;
         font-weight: bold;
-        font-size: 20px;
-        margin: 0 2px;
-        line-height: 42px;
+        font-size: 16px;
+        margin: 0 !important;
+        line-height: 38px;
+        width: 10px;
+        text-align: center;
     }
 
-    /* 6. 發送按鈕固定寬度且對齊 */
+    /* 6. 發送按鈕：固定寬度且對齊時間框高度 */
     .manual-time-container [data-testid="stButton"] button {
-        width: 50px !important;
-        height: 42px !important;
+        width: 45px !important;
+        height: 38px !important;
         background-color: #8d51f5 !important;
         color: white !important;
         border: none !important;
         border-radius: 4px !important;
+        padding: 0 !important;
+        margin-left: 5px !important;
     }
 
     /* # --- 容器區塊樣式：設定深色背景與圓角邊框 --- */
@@ -519,46 +531,42 @@ if page == "帝王木獵人":
 
                 # ✅ 3. 手動修正區 (搬到 if 判斷之外，保證一定會出現)
                 # --- 補報區開始 ---
-
                 st.markdown(
-                    '<p style="font-size:12px; color:#666; text-align:center; margin-bottom:5px;">🕒 補報擊殺時間</p>',
+                    '<p style="font-size:12px; color:#666; text-align:center; margin-bottom:2px; margin-top:10px;">🕒 補報擊殺時間</p>',
                     unsafe_allow_html=True)
 
-                # --- 這裡開始進入隔離區 ---
+                # 使用自定義 div 代替 st.container 以節省空間並整齊對齊
                 st.markdown('<div class="manual-time-container">', unsafe_allow_html=True)
-                with st.container(border=True):
-                    # 使用 vertical_alignment="center" 讓所有欄位內的元件垂直置中
-                    t_col, b_col = st.columns([5, 1], vertical_alignment="center")
 
-                    with t_col:
-                        # 縮小分隔符比例 (0.1)
-                        c1, s1, c2, s2, c3 = st.columns([1, 0.1, 1, 0.1, 1], vertical_alignment="center")
-                        with c1:
-                            h = st.selectbox("H", [f"{x:02d}" for x in range(24)], key=f"h_{ch_name}",
-                                             label_visibility="collapsed")
-                        with s1:
-                            st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
-                        with c2:
-                            m = st.selectbox("M", [f"{x:02d}" for x in range(60)], key=f"m_{ch_name}",
-                                             label_visibility="collapsed")
-                        with s2:
-                            st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
-                        with c3:
-                            s = st.selectbox("S", [f"{x:02d}" for x in range(60)], key=f"s_{ch_name}",
-                                             label_visibility="collapsed")
+                # 直接分配 6 個欄位：[時, 冒號, 分, 冒號, 秒, 按鈕]
+                # 比例經過微調，確保在側邊欄也能水平排整齊
+                m_cols = st.columns([1.2, 0.2, 1.2, 0.2, 1.2, 1.2], gap="small", vertical_alignment="center")
 
-                    with b_col:
-                        # 發送按鈕
-                        if st.button("✈️", key=f"up_{ch_name}", use_container_width=True):
-                            try:
-                                new_dt = dt_class.now(tw_tz).replace(hour=int(h), minute=int(m), second=int(s),
-                                                                microsecond=0)
-                                st.session_state.boss_data[ch_name].update(
-                                    {"last_death": new_dt, "auto_delay_hours": 0})
-                                save_data()
-                                st.rerun()
-                            except:
-                                pass
+                with m_cols[0]:
+                    h = st.selectbox("H", [f"{x:02d}" for x in range(24)], key=f"h_{ch_name}",
+                                     label_visibility="collapsed")
+                with m_cols[1]:
+                    st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
+                with m_cols[2]:
+                    m = st.selectbox("M", [f"{x:02d}" for x in range(60)], key=f"m_{ch_name}",
+                                     label_visibility="collapsed")
+                with m_cols[3]:
+                    st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
+                with m_cols[4]:
+                    s = st.selectbox("S", [f"{x:02d}" for x in range(60)], key=f"s_{ch_name}",
+                                     label_visibility="collapsed")
+                with m_cols[5]:
+                    if st.button("✈️", key=f"up_{ch_name}", use_container_width=True):
+                        try:
+                            # 這裡使用 dt_class 確保與你前面的 import 一致
+                            new_dt = dt_class.now(tw_tz).replace(hour=int(h), minute=int(m), second=int(s),
+                                                                 microsecond=0)
+                            st.session_state.boss_data[ch_name].update({"last_death": new_dt, "auto_delay_hours": 0})
+                            save_data()
+                            st.rerun()
+                        except:
+                            pass
+
                 st.markdown('</div>', unsafe_allow_html=True)  # --- 隔離區結束 ---
                 st.markdown('<div style="height: 10x;"></div>', unsafe_allow_html=True)  # 這是改按鈕與邊框距離
                 # --- 補報區結束 ---
