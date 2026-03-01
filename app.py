@@ -1,34 +1,160 @@
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-import datetime
-from datetime import datetime as dt_class, timedelta
+import datetime  # 用於類型檢查
+from datetime import datetime as dt_class, date, timedelta # 統一使用 dt_class
 import pytz
 import streamlit.components.v1 as components
 import base64
 import json
 import os
 
-# --- 1. 自動重新整理 (每 60 秒) ---
+# ==========================================
+# 1. 網頁基礎設定 (必須是第一個 Streamlit 指令)
+# ==========================================
+st.set_page_config(page_title="BnsNEO懶人小工具", layout="wide")
+
+# ==========================================
+# 2. 核心參數與路徑
+# ==========================================
+DB_FILE = "bns_data.json"
+ADMIN_PASSWORD = "8888"
+tw_tz = pytz.timezone('Asia/Taipei')
+
+# 自動重新整理 (每 60 秒)
 st_autorefresh(interval=60000, key="datarefresh")
 
-# --- 2. 核心時間校正 (台灣時間) ---
-tw_tz = pytz.timezone('Asia/Taipei')
-now = dt_class.now(tw_tz)  # 這是 Python 後端邏輯用的時間
-today_str = now.strftime("%Y-%m-%d")
-current_time_str = now.strftime("%H:%M")
 
-# --- 3. 定義處理圖片的工具箱 (必須放在 render_custom_header 之前) ---
+# ==========================================
+# 3. 數據系統 (載入與存檔邏輯)
+# ==========================================
+
+def load_data():
+    """從檔案載入數據，若失敗則回傳預設值"""
+    default_data = {
+        "expire_date": "2026-03-31",
+        "boss_data": {ch: {"last_death": None, "history": None, "auto_delay_hours": 0, "history_stats": []}
+                      for ch in ["1 頻", "2 頻", "3 頻"]},
+        "seals": [{"name": "攻擊印章", "value": 0}],
+        "panel": {"red_atk": 0, "red_crit": 0, "yellow_atk": 0, "yellow_hp": 0, "blue_atk": 0, "blue_pierce": 0,
+                  "spec_atk": 0},
+        "loc_notes": {},
+        "schedules": {
+            # ✅ 修正：仙幻島與白青也必須是按星期分類的字典
+            "仙幻島": {f"星期{d}": [] for d in "一二三四五六日"},
+            "白青": {f"星期{d}": [] for d in "一二三四五六日"},
+            "儀式": {f"星期{d}": [] for d in "一二三四五六日"}
+        }
+    }
+
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # 自動補齊缺失的 Key，防止程式升級後出錯
+                for key in default_data:
+                    if key not in data:
+                        data[key] = default_data[key]
+                return data
+        except Exception as e:
+            print(f"載入出錯: {e}")
+    return default_data
+
+
+def save_data():
+    """將目前的狀態永久儲存至 JSON"""
+    try:
+        # 確保日期格式正確
+        expire_str = st.session_state.expire_date.strftime("%Y-%m-%d") if isinstance(st.session_state.expire_date,
+                                                                                     date) else "2026-03-31"
+
+        payload = {
+            "expire_date": expire_str,
+            "boss_data": st.session_state.boss_data,
+            "seals": st.session_state.seals,
+            "panel": st.session_state.panel,
+            "loc_notes": st.session_state.loc_notes,
+            "schedules": st.session_state.schedules
+        }
+
+        # 處理 datetime 轉 JSON 字串的工具
+        def json_serial(obj):
+            if isinstance(obj, (datetime.datetime, datetime.date)):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=4, default=json_serial)
+        st.toast("💾 數據已成功存檔")
+    except Exception as e:
+        st.error(f"存檔失敗: {e}")
+
+
+# 別名設定
+save_all_data = save_data
+
+# ==========================================
+# 4. 關鍵：初始化 Session State (F5 不消失的核心)
+# ==========================================
+
+if 'init_fix_final' not in st.session_state:
+    # 讀取存檔
+    raw_data = load_data()
+
+    # A. 處理日期物件 (統一使用 dt_class 或 date)
+    try:
+        # 從 JSON 讀取的日期是字串，轉回 date 物件
+        st.session_state.expire_date = dt_class.strptime(raw_data["expire_date"], "%Y-%m-%d").date()
+    except:
+        st.session_state.expire_date = date(2026, 3, 31)
+
+    # B. 處理 BOSS 時間 (關鍵修正：使用 dt_class 避免報錯)
+    bd = raw_data["boss_data"]
+    for ch in bd:
+        # 將存檔中的 ISO 字串轉回 dt_class 物件，計時器才不會壞掉
+        if bd[ch].get("last_death") and isinstance(bd[ch]["last_death"], str):
+            try:
+                bd[ch]["last_death"] = dt_class.fromisoformat(bd[ch]["last_death"])
+            except:
+                bd[ch]["last_death"] = None
+
+        if bd[ch].get("history") and isinstance(bd[ch]["history"], str):
+            try:
+                bd[ch]["history"] = dt_class.fromisoformat(bd[ch]["history"])
+            except:
+                bd[ch]["history"] = None
+
+    # C. 寫入 Session State
+    st.session_state.boss_data = bd
+    st.session_state.seals = raw_data["seals"]
+    st.session_state.panel = raw_data["panel"]
+    st.session_state.loc_notes = raw_data["loc_notes"]
+    st.session_state.schedules = raw_data["schedules"]
+
+    st.session_state.is_admin = False
+    st.session_state.init_fix_final = True
+
+# ==========================================
+# 5. UI 全域變數捷徑 (放在初始化之後，絕對不會爆炸)
+# ==========================================
+schedules_dict = st.session_state.schedules
+date_display_str = st.session_state.expire_date.strftime('%Y/%m/%d')
+now_tw = dt_class.now(tw_tz)
+
+
+# ==========================================
+# 6. 工具函數：Header 與 圖片處理
+# ==========================================
+
 def get_image_base64(path):
     try:
         if os.path.exists(path):
             with open(path, "rb") as f:
-                data = f.read()
-            return base64.b64encode(data).decode()
+                return base64.b64encode(f.read()).decode()
         return ""
-    except Exception as e:
+    except:
         return ""
 
-# --- 4. 定義 Header 渲染函數 ---
+
 def render_custom_header(icon_path, title_text, title_color="#90cdf4"):
     col1, col2 = st.columns([3, 2])
 
@@ -51,22 +177,32 @@ def render_custom_header(icon_path, title_text, title_color="#90cdf4"):
         ''', unsafe_allow_html=True)
 
     with col2:
-        # JS 時鐘：這只是畫面上好看用的，不影響 Python 邏輯
+        # 這裡恢復了 image_0bc09b.png 中的霓虹發光效果與星期顯示
         components.html(f"""
-            <div id="clock-container" style="text-align: right; color: #00ffcc; text-shadow: 0 0 15px rgba(0, 255, 204, 0.5); line-height: 1.0; padding-right: 10px;">
-                <div id="date-part" style="font-family: 'Segoe UI', sans-serif; font-size: 18px; font-weight: 600; opacity: 0.8; color: #94a3b8; margin-bottom: 2px;"></div>
-                <div id="time-part" style="font-family: 'Courier New', Courier, monospace; font-size: 52px; font-weight: 900; letter-spacing: -1px; margin-top: -5px;"></div>
+            <div id="clock-container" style="text-align: right; line-height: 1.0; padding-right: 10px;">
+                <div id="date-part" style="font-family: 'Segoe UI', sans-serif; font-size: 18px; font-weight: 600; color: #94a3b8; margin-bottom: 2px;"></div>
+                <div id="time-part" style="font-family: 'Courier New', Courier, monospace; font-size: 52px; font-weight: 900; color: #00ffcc; text-shadow: 0 0 20px rgba(0, 255, 204, 0.8), 0 0 10px rgba(0, 255, 204, 0.5); letter-spacing: -1px; margin-top: -5px;"></div>
             </div>
             <script>
                 function updateClock() {{
                     const now = new Date();
-                    // 強制讓 JS 時鐘顯示台灣時間 (UTC+8)
+                    // 校正台灣時間 (UTC+8)
                     const twTime = new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60000);
+
                     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-                    const dateStr = twTime.getFullYear() + '-' + String(twTime.getMonth() + 1).padStart(2, '0') + '-' + String(twTime.getDate()).padStart(2, '0') + ' (' + days[twTime.getDay()] + ')';
-                    const timeStr = String(twTime.getHours()).padStart(2, '0') + ':' + String(twTime.getMinutes()).padStart(2, '0') + ':' + String(twTime.getSeconds()).padStart(2, '0');
-                    document.getElementById('date-part').textContent = dateStr;
-                    document.getElementById('time-part').textContent = timeStr;
+                    const y = twTime.getFullYear();
+                    const m = String(twTime.getMonth() + 1).padStart(2, '0');
+                    const d = String(twTime.getDate()).padStart(2, '0');
+                    const dayName = days[twTime.getDay()];
+
+                    const hh = String(twTime.getHours()).padStart(2, '0');
+                    const mm = String(twTime.getMinutes()).padStart(2, '0');
+                    const ss = String(twTime.getSeconds()).padStart(2, '0');
+
+                    // 格式：2026-02-27 (FRI)
+                    document.getElementById('date-part').textContent = y + '-' + m + '-' + d + ' (' + dayName + ')';
+                    // 格式：20:26:09
+                    document.getElementById('time-part').textContent = hh + ':' + mm + ':' + ss;
                 }}
                 setInterval(updateClock, 1000);
                 updateClock();
@@ -80,102 +216,6 @@ def render_custom_header(icon_path, title_text, title_color="#90cdf4"):
         </style>
     """, unsafe_allow_html=True)
     st.divider()
-
-# --- 接下來再呼叫 render_custom_header ---
-# render_custom_header("你的圖示路徑", "你的標題")
-
-def save_all_data():
-    # 這裡實作您的物理存檔邏輯 (例如寫入 JSON 檔)
-    # with open("data.json", "w", encoding="utf-8") as f:
-    #     json.dump(st.session_state.schedules_dict, f, ensure_ascii=False)
-    st.toast("💾 資料已儲存")
-# schedules_dict = st.session_state.schedules<--就是加這句直接爆炸
-import os
-import streamlit.components.v1 as components
-
-# --- 1. 網頁基礎設定 ---
-st.set_page_config(page_title="BnsNEO懶人小工具", layout="wide")
-ADMIN_PASSWORD = "8888"
-DB_FILE = "bns_data.json"
-
-
-# --- 2. 數據系統 (強化持久化邏輯) ---
-def load_data():
-    default_data = {
-        "boss_data": {ch: {"last_death": None, "history": None, "auto_delay_hours": 0, "history_stats": []} for ch in
-                      ["1 頻", "2 頻", "3 頻"]},
-        "seals": [{"name": "攻擊印章", "value": 0}],
-        "panel": {"red_atk": 0, "red_crit": 0, "yellow_atk": 0, "yellow_hp": 0, "blue_atk": 0, "blue_pierce": 0,
-                  "spec_atk": 0},
-        "loc_notes": {},
-    }
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # 自動補齊缺失的 Key (重要！)
-                for key in default_data:
-                    if key not in data: data[key] = default_data[key]
-
-                for ch in data["boss_data"]:
-                    if data["boss_data"][ch].get("last_death"):
-                        data["boss_data"][ch]["last_death"] = datetime.fromisoformat(data["boss_data"][ch]["last_death"])
-                    if data["boss_data"][ch].get("history"):
-                        data["boss_data"][ch]["history"] = datetime.fromisoformat(data["boss_data"][ch]["history"])
-                return data
-        except:
-            pass
-    return default_data
-
-
-def save_data():
-    data = {
-        "expire_date": st.session_state.expire_date.strftime("%Y-%m-%d") if 'expire_date' in st.session_state else "2026-01-01",
-        "boss_data": st.session_state.get('boss_data', {}),
-        "seals": st.session_state.get('seals', {}),
-        "panel": st.session_state.get('panel', {}),
-        "loc_notes": st.session_state.get('loc_notes', {}),
-        "schedules": st.session_state.schedules, # ✅ 統一使用 schedules，裡面會包含 仙幻島、儀式、白青 等
-    }
-    # 處理 datetime 序列化並寫入檔案
-    temp_data = json.loads(json.dumps(data, default=lambda x: x.isoformat() if isinstance(x, datetime) else str(x)))
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(temp_data, f, ensure_ascii=False, indent=4)
-    st.toast("💾 已存檔")
-
-# 💡 建立函式別名，解決 NameError: 'save_all_data'
-save_all_data = save_data
-
-if 'init_fix_final' not in st.session_state:
-    st.session_state.update(load_data())
-    st.session_state.is_admin = False
-    st.session_state.init_fix_final = True
-
-# --- 統一初始化邏輯 ---
-if 'schedules' not in st.session_state:
-    st.session_state.schedules = {
-        "仙幻島": [],
-        "白青": [],
-        "儀式": {f"星期{d}": [] for d in "一二三四五六日"} # 補上這行解決 KeyError
-    }
-    # 為了讓你的舊代碼（寫著 schedules_dict 的地方）不報錯，定義一個捷徑
-    schedules_dict = st.session_state.schedules
-# --- 這裡放最上面 ---
-from datetime import datetime, date
-
-# 1. 確保 session_state 裡有日期 (這一段是為了防報錯)
-if "expire_date" not in st.session_state:
-    st.session_state.expire_date = date(2026, 3, 31)
-
-# 2. 型態檢查：如果從 JSON 讀出來變成字串，就轉回日期格式
-if isinstance(st.session_state.expire_date, str):
-    try:
-        st.session_state.expire_date = datetime.strptime(st.session_state.expire_date, "%Y-%m-%d").date()
-    except:
-        st.session_state.expire_date = date(2026, 3, 31)
-
-# 3. 定義一個文字版日期，等等給公告欄用
-date_display_str = st.session_state.expire_date.strftime('%Y/%m/%d')
 
 
 # --- 3. CSS 樣式 ---
@@ -200,6 +240,57 @@ st.markdown("""
         padding: 12px 20px !important;
         margin-bottom: 10px !important;
         width: 100% !important;
+    }
+/* 1. 確保整體容器不溢出 */
+    .stMainBlockContainer {
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+
+    /* 2. 補報區專用容器：防止掉出框外 */
+    .manual-time-container {
+        width: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        background: rgba(255, 255, 255, 0.05); /* 淡淡的底色方便辨識範圍 */
+        padding: 5px;
+        border-radius: 8px;
+    }
+
+    /* 3. 強制鎖定 Selectbox 的寬度，不讓它撐開容器 */
+    .manual-time-container [data-testid="stSelectbox"] {
+        width: 75px !important;
+        min-width: 75px !important;
+        flex: none !important;
+    }
+
+    /* 4. 暴力隱藏 Selectbox 箭頭與多餘邊距 (讓空間變大) */
+    .manual-time-container [data-testid="stSelectbox"] svg {
+        display: none !important;
+    }
+    .manual-time-container [data-testid="stSelectbox"] [role="button"] {
+        padding-right: 0 !important;
+        text-align: center !important;
+    }
+
+    /* 5. 冒號對齊 */
+    .time-sep {
+        color: #00ffcc;
+        font-weight: bold;
+        font-size: 20px;
+        margin: 0 2px;
+        line-height: 42px;
+    }
+
+    /* 6. 發送按鈕固定寬度且對齊 */
+    .manual-time-container [data-testid="stButton"] button {
+        width: 50px !important;
+        height: 42px !important;
+        background-color: #8d51f5 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 4px !important;
     }
 
     /* # --- 容器區塊樣式：設定深色背景與圓角邊框 --- */
@@ -323,21 +414,66 @@ with st.sidebar:
 @st.fragment(run_every=1)
 def timer_logic(ch_name):
     data = st.session_state.boss_data[ch_name]
-    if data["last_death"]:
-        delay = data.get("auto_delay_hours", 0)
-        target = data["last_death"] + timedelta(hours=2 + delay)
-        now = datetime.now()
-        diff = (target - now).total_seconds()
-        if diff < -3600 and (2 + delay) < 5:
-            st.session_state.boss_data[ch_name]["auto_delay_hours"] += 1
-            save_data();
-            st.rerun()
-        if diff > 0:
-            st.write("⌛ **重生倒數：**")
-            cls = "timer-alert" if diff <= 1800 else "timer-normal"
-            st.markdown(f'<p class="{cls}">{str(timedelta(seconds=int(diff)))}</p>', unsafe_allow_html=True)
-        else:
-            st.success("✅ 進入重生時段")
+    # ✅ 固定高度為 180px
+    box_style = "height: 180px; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 10px; padding: 15px; text-align: center;"
+
+    if not data["last_death"]:
+        st.markdown(f"""
+            <div style="{box_style} background: rgba(255, 75, 75, 0.05); border: 2px solid #ff4b4b;">
+                <div style="color: #ff4b4b; font-size: 20px; font-weight: bold;">❌ 尚無擊殺紀錄</div>
+                <div style="color: #fff; font-size: 45px; font-family: monospace; margin: 10px 0;">-- : -- : --</div>
+                <div style="color: #888; font-size: 13px;">請下方選擇時間並點擊上傳</div>
+            </div>
+        """, unsafe_allow_html=True)
+        return  # 結束函式
+
+    # 2. 有紀錄時的邏輯計算
+    last_death = data["last_death"]
+    now = dt_class.now(tw_tz)
+    elapsed_mins = (now - last_death).total_seconds() / 60
+
+    COOLING_LIMIT = 120  # 2小時
+    WINDOW_LIMIT = 300  # 5小時
+
+    # --- 階段 A: 冷卻中 (0 ~ 120 分鐘) ---
+    if elapsed_mins < COOLING_LIMIT:
+        # 修正：計算總剩餘秒數，而不是只有分鐘
+        remaining_seconds = int((COOLING_LIMIT * 60) - (now - last_death).total_seconds())
+        # 使用 str(timedelta) 格式化總秒數
+        time_display = str(timedelta(seconds=remaining_seconds))
+
+        st.markdown(f"""
+                <div style="{box_style} background: rgba(100, 100, 100, 0.1); border: 2px solid #666;">
+                    <div style="color: #999; font-size: 16px; font-weight: bold;">❄️ BOSS 冷卻中</div>
+                    <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">
+                        {time_display}
+                    </div>
+                    <div style="color: #666; font-size: 13px;">距離監督窗口開啟還有一段時間</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # --- 階段 B: 監督視窗開啟 (120 ~ 300 分鐘) ---
+    elif COOLING_LIMIT <= elapsed_mins <= WINDOW_LIMIT:
+        in_window_mins = int(elapsed_mins - COOLING_LIMIT)
+        st.markdown(f"""
+            <div style="{box_style} background: rgba(0, 255, 136, 0.1); border: 2px solid #00ff88; box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);">
+                <div style="color: #00ff88; font-size: 20px; font-weight: bold;">👁️ 監督視窗已開啟</div>
+                <div style="color: #fff; font-size: 16px; margin: 10px 0;">BOSS 隨時可能重生，請守點</div>
+                <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 5px; font-size: 16px; font-weight: bold;">
+                    窗口已持續: {in_window_mins} 分鐘
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # --- 階段 C: 時間丟失 (超過 300 分鐘) ---
+    else:
+        st.markdown(f"""
+            <div style="{box_style} background: rgba(255, 75, 75, 0.1); border: 2px solid #ff4b4b;">
+                <div style="color: #ff4b4b; font-size: 20px; font-weight: bold;">❌ 時間已丟失</div>
+                <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">00:00:00</div>
+                <div style="color: #888; font-size: 13px;">已超過 5 小時重生區間，請重新回報</div>
+            </div>
+        """, unsafe_allow_html=True)
 
 
 # --- 7. 各頁面功能 ---
@@ -349,46 +485,125 @@ if page == "帝王木獵人":
             st.markdown("#### 📊 內部數據監測")
             sc = st.columns(3)
             for i, (ch, val) in enumerate(st.session_state.boss_data.items()):
-                with sc[i]:
+                with sc[i % 3]: # 確保索引不超出欄位
                     stats = val.get("history_stats", [])
-                    avg_txt = f"{int((sum(stats) / len(stats)) // 3600)}時{int(((sum(stats) / len(stats)) % 3600) // 60)}分" if stats else "尚無數據"
+                    if stats:
+                        avg_val = sum(stats) / len(stats)
+                        avg_txt = f"{int(avg_val // 3600)}時{int((avg_val % 3600) // 60)}分"
+                    else:
+                        avg_txt = "尚無數據"
                     st.markdown(f'<div class="admin-avg-box">📍 {ch} 重生間隔：{avg_txt}</div>', unsafe_allow_html=True)
                 st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)  # 這是改按鈕與邊框距離
+
     cols = st.columns(3)
     for i, ch_name in enumerate(st.session_state.boss_data.keys()):
-        with cols[i]:
+        with cols[i % 3]:
             data = st.session_state.boss_data[ch_name]
             with st.container(border=True):
-                st.markdown(f'<div class="boss-title">{ch_name}</div>', unsafe_allow_html=True)
+                # 頻道標題
+                st.markdown(
+                    f'<div class="boss-title" style="text-align:center; font-size:20px; font-weight:bold; color:#8d51f5; margin-bottom:10px;">{ch_name}</div>',
+                    unsafe_allow_html=True)
+
+                # 1. 呼叫大框框邏輯 (冷卻/監督/丟失)
                 timer_logic(ch_name)
+
+                # 2. 顯示上次擊殺時間 (若無紀錄則顯示無人擊殺)
+                last_val = data['last_death'].strftime('%H:%M:%S') if data['last_death'] else "無人擊殺"
+                st.markdown(
+                    f'<div style="text-align:center; color:#888; font-size:14px; margin: 10px 0;">💀 上次擊殺：{last_val}</div>',
+                    unsafe_allow_html=True)
+
+                st.divider()
+
+
+                # ✅ 3. 手動修正區 (搬到 if 判斷之外，保證一定會出現)
+                # --- 補報區開始 ---
+
+                st.markdown(
+                    '<p style="font-size:12px; color:#666; text-align:center; margin-bottom:5px;">🕒 補報擊殺時間</p>',
+                    unsafe_allow_html=True)
+
+                # --- 這裡開始進入隔離區 ---
+                st.markdown('<div class="manual-time-container">', unsafe_allow_html=True)
+                with st.container(border=True):
+                    # 使用 vertical_alignment="center" 讓所有欄位內的元件垂直置中
+                    t_col, b_col = st.columns([5, 1], vertical_alignment="center")
+
+                    with t_col:
+                        # 縮小分隔符比例 (0.1)
+                        c1, s1, c2, s2, c3 = st.columns([1, 0.1, 1, 0.1, 1], vertical_alignment="center")
+                        with c1:
+                            h = st.selectbox("H", [f"{x:02d}" for x in range(24)], key=f"h_{ch_name}",
+                                             label_visibility="collapsed")
+                        with s1:
+                            st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
+                        with c2:
+                            m = st.selectbox("M", [f"{x:02d}" for x in range(60)], key=f"m_{ch_name}",
+                                             label_visibility="collapsed")
+                        with s2:
+                            st.markdown('<div class="time-sep">:</div>', unsafe_allow_html=True)
+                        with c3:
+                            s = st.selectbox("S", [f"{x:02d}" for x in range(60)], key=f"s_{ch_name}",
+                                             label_visibility="collapsed")
+
+                    with b_col:
+                        # 發送按鈕
+                        if st.button("✈️", key=f"up_{ch_name}", use_container_width=True):
+                            try:
+                                new_dt = dt_class.now(tw_tz).replace(hour=int(h), minute=int(m), second=int(s),
+                                                                microsecond=0)
+                                st.session_state.boss_data[ch_name].update(
+                                    {"last_death": new_dt, "auto_delay_hours": 0})
+                                save_data()
+                                st.rerun()
+                            except:
+                                pass
+                st.markdown('</div>', unsafe_allow_html=True)  # --- 隔離區結束 ---
+                st.markdown('<div style="height: 10x;"></div>', unsafe_allow_html=True)  # 這是改按鈕與邊框距離
+                # --- 補報區結束 ---
+
+                st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+                # 4. 原始擊殺按鈕 (恢復原本功能)
                 if data["last_death"]:
-                    st.write(f"💀 上次擊殺：{data['last_death'].strftime('%H:%M:%S')}")
-                    st.divider()
                     b_col1, b_col2 = st.columns([1, 1])
                     with b_col1:
-                        if st.button("💀 擊殺", key=f"k_{ch_name}", use_container_width=True):
-                            interval = (datetime.now() - data["last_death"]).total_seconds()
-                            if 7200 <= interval <= 18000: st.session_state.boss_data[ch_name]["history_stats"].append(
-                                interval)
-                            st.session_state.boss_data[ch_name].update(
-                                {"history": data["last_death"], "last_death": datetime.now(), "auto_delay_hours": 0})
+                        # 這是你原本的「擊殺」按鈕
+                        if st.button("💀 擊殺", key=f"kill_{ch_name}", use_container_width=True, type="primary"):
+                            st.session_state.boss_data[ch_name].update({
+                                "history": data["last_death"],
+                                "last_death": dt_class.now(tw_tz),
+                                "auto_delay_hours": 0
+                            })
                             save_data()
                             st.rerun()
                     with b_col2:
-                        if st.button("↩️ 取消", key=f"u_{ch_name}", use_container_width=True):
+                        # 這是你原本的「取消」按鈕
+                        if st.button("↩️ 取消", key=f"undo_{ch_name}", use_container_width=True):
                             if data.get("history"):
                                 st.session_state.boss_data[ch_name].update(
-                                    {"last_death": data["history"], "history": None, "auto_delay_hours": 0})
+                                    {"last_death": data["history"], "history": None})
                                 save_data()
                                 st.rerun()
-
-                    st.markdown('<div style="height: 25px;"></div>', unsafe_allow_html=True) #這是改按鈕與邊框距離
                 else:
-                    if st.button("💀 擊殺", key=f"init_{ch_name}", use_container_width=True):
+                    # 這是原本尚無紀錄時的按鈕
+                    if st.button("🏁 開始計時 ", key=f"start_{ch_name}", use_container_width=True, type="primary"):
                         st.session_state.boss_data[ch_name].update(
-                            {"last_death": datetime.now(), "auto_delay_hours": 0})
+                            {"last_death": dt_class.now(tw_tz), "auto_delay_hours": 0})
                         save_data()
                         st.rerun()
+
+                # 💡 隱藏 selectbox 的部分邊框，讓它們看起來像連在一起 (可選)
+                st.markdown("""
+                                <style>
+                                [data-testid="column"] div[data-baseweb="select"] {
+                                    border-radius: 4px !important;
+                                }
+                                </style>
+                            """, unsafe_allow_html=True)
+
+                st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+
 
 if page == "野王時間表":
     render_custom_header("野王.png", "野王重生動態紀錄")
@@ -413,7 +628,7 @@ if page == "野王時間表":
 
         # 1. 修正時區：確保網頁知道現在是台灣幾點
         tw_tz = pytz.timezone('Asia/Taipei')
-        now = datetime.now(tw_tz)
+        now = dt_class.now(tw_tz)
         today_idx = now.weekday()
         today_str = week_map[today_idx]
 
@@ -566,51 +781,59 @@ if page == "野王時間表":
 
         # --- 前台顯示：頂部 3 場 ---
         st.markdown(f"**🔥 {view_day} 即將重生 (前三場)**")
+
+        # ✅ 修正 1：務必先初始化變數，避免 image_e801dd 報錯
         upcoming_rows = ""
         display_count = 0
-        # 這裡我們用完整清單來跑迴圈，但在裡面判斷「是否顯示在預報區」
+        today_date = now.date()  # 取得今天日期
+
         for row in sorted_all_day:
+            if len(row) < 2: continue
             s_time, loc = row[0], row[1]
             is_unsure = row[3] if len(row) > 3 else False
-            time_display_html = f"<span style='color: #b87012'>{s_time} (?)</span>" if is_unsure else s_time
 
             try:
-                target = datetime.strptime(s_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
-                target = tw_tz.localize(target)
-                diff = (target - now).total_seconds() / 60
+                # ✅ 修正 2：將「今天日期」與「場次時間」組合，否則 diff 會因年份(1900)錯誤而無法顯示
+                target_t = dt_class.strptime(s_time, "%H:%M").time()
+                target_dt = tw_tz.localize(dt_class.combine(today_date, target_t))
 
-                # 僅顯示「尚未結束」的場次，最多 3 場
+                # 計算現在與場次的差值（分鐘）
+                diff = (target_dt - now).total_seconds() / 60
+
+                # 邏輯：顯示 5 分鐘內重生中，或尚未開始的場次
                 if diff > -5 and display_count < 3:
                     note = st.session_state.loc_notes.get(row[2] if len(row) > 2 else "", "")
                     s = {"bg": "rgba(255,255,255,0.05)", "c": "white", "txt": "等待中", "sh": "none"}
 
                     if view_day == today_str:
                         if -5 <= diff <= 0:
-                            s.update({"bg": "#a63030", "txt": "🚨 重生中", "sh": "0px 0px 20px #a63030"})
+                            s.update({"bg": "#a63030", "txt": "🚨 重生中", "sh": "0px 0px 15px #a63030"})
                         elif diff > 0 and display_count == 0:
                             s.update(
-                                {"bg": "#d1ba3d", "c": "black", "txt": "🔥 下一隻預備", "sh": "0px 0px 20px #d1ba3d"})
+                                {"bg": "#d1ba3d", "c": "black", "txt": "🔥 下一隻預備", "sh": "0px 0px 15px #d1ba3d"})
+
+                    time_display = f"<span style='color: #b87012'>{s_time} (?)</span>" if is_unsure else s_time
 
                     upcoming_rows += f"""
-                        <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
-                            <td style="padding:20px; font-weight:bold; width:100px;">{time_display_html}</td>
-                            <td style="padding:12px;">{loc}<br><small style="color:#c7ffc7; opacity:0.8;">{note}</small></td>
-                            <td style="padding:20px; text-align:right; font-weight:bold;">{s['txt']}</td>
-                        </tr>"""
+                                <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
+                                    <td style="padding:15px; font-weight:bold; width:90px; font-size:16px;">{time_display}</td>
+                                    <td style="padding:10px;">{loc}<br><small style="color:#c7ffc7; opacity:0.8;">{note}</small></td>
+                                    <td style="padding:15px; text-align:right; font-weight:bold;">{s['txt']}</td>
+                                </tr>"""
                     display_count += 1
-            except:
+            except Exception:
                 continue
 
-        if upcoming_rows:
-            st.components.v1.html(
-                f'<div style="background:#1e1e26; border-radius:10px; padding:5px;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{upcoming_rows}</table></div>',
-                height=240)
-        else:
-            st.info(f"{view_day} 目前無後續場次")
+            # ✅ 修正 3：渲染判斷
+            if upcoming_rows:
+                st.components.v1.html(
+                    f'<div style="background:#1e1e26; border-radius:10px; border:1px solid #464855;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{upcoming_rows}</table></div>',
+                    height=240)
+            else:
+                st.info(f"✨ {view_day} 目前無後續場次")
 
         with st.expander(f"📅 查看 {view_day} 全天完整時間表"):
             all_day_html_list = []
-            # ✅ 使用 sorted_all_day 確保所有時間都在，不會因為過期消失
             for r in sorted_all_day:
                 t_str = f"<span style='color: #b87012; font-weight: bold;'>{r[0]} (?)</span>" if (
                             len(r) > 3 and r[3]) else r[0]
@@ -620,9 +843,10 @@ if page == "野王時間表":
 
             all_day_rows_final = "".join(all_day_html_list)
             if all_day_rows_final:
-                components.html(
-                    f'<div style="max-height:300px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{all_day_rows_final}</table></div>',
-                    height=300)
+                # ✅ 修正：確保使用 st.components.v1.html 並稍微增加高度
+                st.components.v1.html(
+                    f'<div style="max-height:350px; overflow-y:auto; background:#1e1e26;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{all_day_rows_final}</table></div>',
+                    height=350)
             else:
                 st.write("目前尚無資料")
 
@@ -676,7 +900,7 @@ elif page == "儀式時間表":
     week_list = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     # ✅ 強制設定台灣時區 (解決時差問題)
     tw_tz = pytz.timezone('Asia/Taipei')
-    now_t = datetime.now(tw_tz)
+    now_t = dt_class.now(tw_tz)
     today_week = week_list[now_t.weekday()]
     now_str = now_t.strftime("%H:%M")
 
@@ -814,7 +1038,7 @@ elif page == "儀式時間表":
                 is_future = False
                 try:
                     # ✅ 正確轉換時間比對 (使用台灣時區)
-                    target_dt = datetime.strptime(r[0], "%H:%M").replace(
+                    target_dt = dt_class.strptime(r[0], "%H:%M").replace(
                         year=now_t.year, month=now_t.month, day=now_t.day
                     )
                     target_dt = tw_tz.localize(target_dt)
@@ -869,9 +1093,9 @@ elif page == "儀式時間表":
 
                     # ✅ 判定是否已過期 (過期則字體變淡)
                     try:
-                        target_t = datetime.strptime(r[0], "%H:%M").time()
+                        target_t = dt_class.strptime(r[0], "%H:%M").time()
                         is_past = target_t < now_t.time() and not (-5 <= (
-                                    datetime.combine(now_t.date(), target_t).replace(
+                                    dt_class.combine(now_t.date(), target_t).replace(
                                         tzinfo=tw_tz) - now_t).total_seconds() / 60 <= 0)
                     except:
                         is_past = False
