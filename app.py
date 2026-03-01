@@ -832,13 +832,13 @@ if page == "野王時間表":
             except Exception:
                 continue
 
-            # ✅ 修正 3：渲染判斷
-            if upcoming_rows:
-                st.components.v1.html(
-                    f'<div style="background:#1e1e26; border-radius:10px; border:1px solid #464855;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{upcoming_rows}</table></div>',
-                    height=240)
-            else:
-                st.info(f"✨ {view_day} 目前無後續場次")
+        # ✅ 修正 3：渲染判斷
+        if upcoming_rows:
+            st.components.v1.html(
+                f'<div style="background:#1e1e26; border-radius:10px; border:1px solid #464855;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{upcoming_rows}</table></div>',
+                height=240)
+        else:
+            st.info(f"✨ {view_day} 目前無後續場次")
 
         with st.expander(f"📅 查看 {view_day} 全天完整時間表"):
             all_day_html_list = []
