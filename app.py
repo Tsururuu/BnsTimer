@@ -17,7 +17,7 @@ st.set_page_config(page_title="BnsNEO懶人小工具", layout="wide")
 # 2. 核心參數與路徑
 # ==========================================
 DB_FILE = "bns_data.json"
-ADMIN_PASSWORD = "8888"
+ADMIN_PASSWORD = "369963"
 tw_tz = pytz.timezone('Asia/Taipei')
 
 # 自動重新整理 (每 60 秒)
