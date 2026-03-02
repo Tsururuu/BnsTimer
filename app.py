@@ -900,12 +900,15 @@ if page == "野王時間表":
                                                 </tr>"""
 
                                 # 渲染 HTML 表格
-                                st.components.v1.html(
-                                    f'''<div style="max-height:300px; overflow-y:auto;">
-                                                    <table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif; font-size:13px;">
-                                                        {boss_rows_html}
-                                                    </table>
-                                                </div>''', height=250)
+                                    # ✅ 修正：把高度拉長，並移除內部捲軸限制
+                                    st.components.v1.html(
+                                        f'''<div style="height: auto; overflow: visible;">
+                                                                    <table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif; font-size:14px;">
+                                                                        {boss_rows_html}
+                                                                    </table>
+                                                                </div>''',
+                                        height=min(len(sorted_boss_data) * 42 + 40, 1000)  # 自動計算高度，最高 1000px
+                                    )
                             else:
                                 st.caption(f"🍵 {day_name} 目前無野王排程")
 
