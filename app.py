@@ -137,22 +137,22 @@ if 'init_fix_final' not in st.session_state:
     except:
         st.session_state.expire_date = date(2026, 3, 31)
 
-        # B. 處理 BOSS 時間 (關鍵修正：新增歷史紀錄初始化)
-        bd = raw_data["boss_data"]
-        for ch in bd:
-            # --- 原有的 last_death 轉換邏輯保持不變 ---
-            if bd[ch].get("last_death") and isinstance(bd[ch]["last_death"], str):
-                try:
-                    bd[ch]["last_death"] = dt_class.fromisoformat(bd[ch]["last_death"])
-                except:
-                    bd[ch]["last_death"] = None
+    # B. 處理 BOSS 時間 (關鍵修正：新增歷史紀錄初始化)
+    bd = raw_data["boss_data"]
+    for ch in bd:
+        # --- 原有的 last_death 轉換邏輯保持不變 ---
+        if bd[ch].get("last_death") and isinstance(bd[ch]["last_death"], str):
+            try:
+                bd[ch]["last_death"] = dt_class.fromisoformat(bd[ch]["last_death"])
+            except:
+                bd[ch]["last_death"] = None
 
-            # --- ✅ 新增：確保 history_times (顯示用) 與 history_stats (間隔用) 存在 ---
-            if "history_times" not in bd[ch]:
-                bd[ch]["history_times"] = []  # 用來存 "14:05:30" 這種字串
+        # --- ✅ 新增：確保 history_times (顯示用) 與 history_stats (間隔用) 存在 ---
+        if "history_times" not in bd[ch]:
+            bd[ch]["history_times"] = []  # 用來存 "14:05:30" 這種字串
 
-            if "history_stats" not in bd[ch]:
-                bd[ch]["history_stats"] = []  # 用來存 7200 這種秒數間隔
+        if "history_stats" not in bd[ch]:
+            bd[ch]["history_stats"] = []  # 用來存 7200 這種秒數間隔
 
     # C. 寫入 Session State
     st.session_state.boss_data = bd
