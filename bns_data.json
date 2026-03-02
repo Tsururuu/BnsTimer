@@ -2,7 +2,7 @@
     "expire_date": "2026-03-25",
     "boss_data": {
         "1 頻": {
-            "last_death": null,
+            "last_death": "2026-03-01T22:39:46.094882+08:00",
             "history": null,
             "auto_delay_hours": 0,
             "history_stats": []
@@ -14,8 +14,8 @@
             "history_stats": []
         },
         "3 頻": {
-            "last_death": "2026-03-01T16:05:13+08:00",
-            "history": null,
+            "last_death": "2026-03-02T18:55:34.621808+08:00",
+            "history": "2026-03-02T15:49:05+08:00",
             "auto_delay_hours": 0,
             "history_stats": []
         }

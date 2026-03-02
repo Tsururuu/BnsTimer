@@ -224,13 +224,41 @@ st.markdown("""
     /* # --- 動態效果：定義閃爍動畫 --- */
     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 
-    /* # --- 標題樣式：主標題與 BOSS 名稱 --- */
-    .main-title { font-size: 2.3rem !important; font-weight: 800; color: white; text-shadow: 2px 2px 4px black; margin-bottom: 5px; }
-    .boss-title { font-size: 1.5rem !important; font-weight: 850; color: white; text-align: center; margin-bottom: 10px; }
+    /* # --- 標題樣式：使用 clamp 讓大小隨視窗縮放 --- */
+    .main-title { 
+        font-size: clamp(1.5rem, 4vw, 2.5rem) !important; /* 最小 1.5rem，隨視窗 4% 縮放，最大 2.5rem */
+        font-weight: 800; 
+        color: white; 
+        text-shadow: 2px 2px 4px black; 
+        margin-bottom: 5px; 
+        text-align: center;
+    }
+    
+    .boss-title { 
+        font-size: clamp(1.1rem, 2.5vw, 1.8rem) !important; 
+        font-weight: 850; 
+        color: white; 
+        text-align: center; 
+        margin-bottom: 10px; 
+    }
 
-    /* # --- 計時器顯示：一般綠色與警告紅色(含閃爍) --- */
-    .timer-normal { font-size: 2.5rem !important; color: #00ff00 !important; font-weight: bold; font-family: monospace; }
-    .timer-alert { font-size: 2.5rem !important; color: #ff4b4b !important; font-weight: bold; font-family: monospace; animation: blink 1s infinite; }
+    /* # --- 計時器顯示：確保時間數字在縮放時不會破圖 --- */
+    .timer-normal { 
+        font-size: clamp(1.8rem, 5vw, 2.8rem) !important; 
+        color: #00ff00 !important; 
+        font-weight: bold; 
+        font-family: monospace; 
+        text-align: center;
+    }
+    
+    .timer-alert { 
+        font-size: clamp(1.8rem, 5vw, 2.8rem) !important; 
+        color: #ff4b4b !important; 
+        font-weight: bold; 
+        font-family: monospace; 
+        animation: blink 1s infinite; 
+        text-align: center;
+    }
 
     /* # --- 側邊欄單選按鈕(Radio)：美化成卡片式大型按鈕 --- */
     [data-testid="stSidebarUserContent"] div.stRadio div[role="radiogroup"] > label {
@@ -247,63 +275,57 @@ st.markdown("""
         padding-right: 1rem !important;
     }
 
-    /* 2. 補報區專用容器：模擬框框效果並強制水平 */
-    .manual-time-container {
-        width: 100% !important;
-        display: flex !important;
-        flex-direction: row !important; /* 強制橫向 */
-        flex-wrap: nowrap !important;    /* 絕對不准換行 */
-        align-items: center !important;
-        justify-content: center !important;
-        background: rgba(255, 255, 255, 0.03) !important;
-        border: 1px solid #464855 !important; /* 加上跟原本一樣的框框線 */
-        padding: 4px 2px !important;
-        border-radius: 8px !important;
-        gap: 2px !important; /* 元件之間的間距 */
-    }
+    /* 2. 補報區專用容器：強化響應式彈性 */
+.manual-time-container {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important; /* 確保在極窄視窗下也不會掉行 */
+    align-items: center !important;
+    justify-content: space-between !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid #464855 !important;
+    padding: 0.4vw 0.2vw !important; /* 隨視窗寬度縮放內距 */
+    border-radius: 8px !important;
+    gap: 1px !important;
+}
 
-    /* 3. 鎖定 Selectbox 寬度：縮小到 60-65px 才能在三頻並排時塞下 */
-    .manual-time-container [data-testid="stSelectbox"] {
-        width: 62px !important;
-        min-width: 62px !important;
-        flex: none !important;
-    }
+/* 3. 讓 Selectbox (時分秒) 隨寬度自動伸縮 */
+.manual-time-container [data-testid="stSelectbox"] {
+    /* 使用 min-width 確保數字不會被擠不見，但允許它隨寬度伸展 */
+    flex: 1 1 auto !important;
+    min-width: 42px !important; 
+    max-width: 75px !important;
+}
 
-    /* 4. 暴力隱藏 Selectbox 箭頭與多餘邊距 */
-    .manual-time-container [data-testid="stSelectbox"] svg {
-        display: none !important;
-    }
-    .manual-time-container [data-testid="stSelectbox"] div[data-baseweb="select"] {
-        padding-right: 0 !important;
-    }
-    .manual-time-container [data-testid="stSelectbox"] [role="button"] {
-        padding: 0 !important;
-        text-align: center !important;
-        font-size: 14px !important;
-    }
+/* 4. 字體大小響應式：clamp(最小, 視窗相關值, 最大) */
+.manual-time-container [role="button"], 
+.manual-time-container div[data-baseweb="select"] {
+    font-size: clamp(12px, 1.1vw, 16px) !important;
+    padding: 0 !important;
+    text-align: center !important;
+}
 
-    /* 5. 冒號對齊：縮小間距 */
-    .time-sep {
-        color: #00ffcc;
-        font-weight: bold;
-        font-size: 16px;
-        margin: 0 !important;
-        line-height: 38px;
-        width: 10px;
-        text-align: center;
-    }
+/* 5. 冒號響應式調整 */
+.time-sep {
+    color: #00ffcc;
+    font-weight: bold;
+    font-size: clamp(14px, 1.2vw, 18px);
+    width: auto;
+    margin: 0 1px;
+    text-align: center;
+}
 
-    /* 6. 發送按鈕：固定寬度且對齊時間框高度 */
-    .manual-time-container [data-testid="stButton"] button {
-        width: 45px !important;
-        height: 38px !important;
-        background-color: #8d51f5 !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 4px !important;
-        padding: 0 !important;
-        margin-left: 5px !important;
-    }
+/* 6. ✈️ 按鈕響應式：確保寬度隨比例變動 */
+.manual-time-container [data-testid="stButton"] button {
+    flex: 0 1 50px !important; /* 按鈕不要伸展得太誇張 */
+    min-width: 35px !important;
+    height: clamp(32px, 3vw, 40px) !important;
+    background-color: #8d51f5 !important;
+    font-size: clamp(14px, 1.2vw, 18px) !important;
+    padding: 0 !important;
+    margin-left: 2px !important;
+}
 
     /* # --- 容器區塊樣式：設定深色背景與圓角邊框 --- */
     [data-testid="stVVerticalBlockBorderConfigured"] { border-radius: 15px; border: 2px solid #464855; background-color: #1e1e26; }
