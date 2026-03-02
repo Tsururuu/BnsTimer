@@ -88,9 +88,39 @@ def save_data():
     except Exception as e:
         st.error(f"存檔失敗: {e}")
 
-
 # 別名設定
 save_all_data = save_data
+
+
+def record_boss_event(ch, h, m, s):
+    """
+    這個工具會幫你更新時間點、計算間隔並存檔
+    """
+    # 1. 取得該頻道的資料參考
+    ch_data = st.session_state.boss_data[ch]
+
+    # 2. 存入顯示用的時間字串 (例如 "14:05:30")
+    now_time_str = f"{h:02d}:{m:02d}:{s:02d}"
+    ch_data["history_times"].append(now_time_str)
+    ch_data["history_times"] = ch_data["history_times"][-10:]  # 只留 10 筆
+
+    # 3. 計算重生間隔 (如果上次有紀錄)
+    current_total_sec = h * 3600 + m * 60 + s
+    last_sec = ch_data.get("last_report_seconds")
+    if last_sec:
+        diff = current_total_sec - last_sec
+        if diff > 600:  # 過濾掉 10 分鐘內的重複點擊
+            ch_data["history_stats"].append(diff)
+            ch_data["history_stats"] = ch_data["history_stats"][-10:]
+
+    ch_data["last_report_seconds"] = current_total_sec
+
+    # 4. 更新最後死亡時間點 (為了計時器運作)
+    # 這裡建議統一更新 last_death
+    ch_data["last_death"] = dt_class.now(tw_tz).replace(hour=h, minute=m, second=s)
+
+    # 5. 呼叫你原本那個寫好的 save_data() 存檔
+    save_data()
 
 # ==========================================
 # 4. 關鍵：初始化 Session State (F5 不消失的核心)
@@ -107,21 +137,22 @@ if 'init_fix_final' not in st.session_state:
     except:
         st.session_state.expire_date = date(2026, 3, 31)
 
-    # B. 處理 BOSS 時間 (關鍵修正：使用 dt_class 避免報錯)
-    bd = raw_data["boss_data"]
-    for ch in bd:
-        # 將存檔中的 ISO 字串轉回 dt_class 物件，計時器才不會壞掉
-        if bd[ch].get("last_death") and isinstance(bd[ch]["last_death"], str):
-            try:
-                bd[ch]["last_death"] = dt_class.fromisoformat(bd[ch]["last_death"])
-            except:
-                bd[ch]["last_death"] = None
+        # B. 處理 BOSS 時間 (關鍵修正：新增歷史紀錄初始化)
+        bd = raw_data["boss_data"]
+        for ch in bd:
+            # --- 原有的 last_death 轉換邏輯保持不變 ---
+            if bd[ch].get("last_death") and isinstance(bd[ch]["last_death"], str):
+                try:
+                    bd[ch]["last_death"] = dt_class.fromisoformat(bd[ch]["last_death"])
+                except:
+                    bd[ch]["last_death"] = None
 
-        if bd[ch].get("history") and isinstance(bd[ch]["history"], str):
-            try:
-                bd[ch]["history"] = dt_class.fromisoformat(bd[ch]["history"])
-            except:
-                bd[ch]["history"] = None
+            # --- ✅ 新增：確保 history_times (顯示用) 與 history_stats (間隔用) 存在 ---
+            if "history_times" not in bd[ch]:
+                bd[ch]["history_times"] = []  # 用來存 "14:05:30" 這種字串
+
+            if "history_stats" not in bd[ch]:
+                bd[ch]["history_stats"] = []  # 用來存 7200 這種秒數間隔
 
     # C. 寫入 Session State
     st.session_state.boss_data = bd
@@ -516,17 +547,41 @@ if page == "帝王木獵人":
 
     if st.session_state.is_admin:
         with st.container(border=True):
-            st.markdown("#### 📊 內部數據監測")
+            st.markdown("#### 📊 內部數據監測 (最近 5 次通報)")
             sc = st.columns(3)
             for i, (ch, val) in enumerate(st.session_state.boss_data.items()):
-                with sc[i % 3]: # 確保索引不超出欄位
+                with sc[i % 3]:
+                    # 1. 取得重生間隔平均值 (你原本的邏輯)
                     stats = val.get("history_stats", [])
                     if stats:
                         avg_val = sum(stats) / len(stats)
-                        avg_txt = f"{int(avg_val // 3600)}時{int((avg_val % 3600) // 60)}分"
+                        avg_txt = f"{int(avg_val // 3600)}h {int((avg_val % 3600) // 60)}m"
                     else:
                         avg_txt = "尚無數據"
-                    st.markdown(f'<div class="admin-avg-box">📍 {ch} 重生間隔：{avg_txt}</div>', unsafe_allow_html=True)
+
+                    # 2. 取得最近 5 次的通報時間 (假設存在 history_times 裡)
+                    # 如果你還沒存過時間，等等看下方的「儲存邏輯」修改
+                    history_times = val.get("history_times", [])[-5:][::-1]  # 取最後5筆並反轉
+
+                    # 3. 建立時間標籤的 HTML
+                    if history_times:
+                        time_tags = "".join([
+                            f'<div style="background:#2d2d38; border:1px solid #444; border-radius:4px; margin:2px; font-size:12px; color:#aaa;">{t}</div>'
+                            for t in history_times
+                        ])
+                    else:
+                        time_tags = '<div style="color:#666; font-size:12px;">暫無紀錄</div>'
+
+                    # 4. 渲染顯示
+                    st.markdown(f"""
+                        <div style="border: 1px solid #464855; border-radius: 10px; padding: 10px; background: rgba(255,165,0,0.05); text-align: center;">
+                            <div style="color:#ffa500; font-weight:bold; margin-bottom:5px;">📍 {ch}</div>
+                            <div style="font-size:13px; color:#fff; margin-bottom:8px;">平均間隔: {avg_txt}</div>
+                            <hr style="border:0.1px solid #444; margin:5px 0;">
+                            <div style="font-size:11px; color:#888; margin-bottom:5px;">近期紀錄</div>
+                            {time_tags}
+                        </div>
+                    """, unsafe_allow_html=True)
                 st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)  # 這是改按鈕與邊框距離
 
     cols = st.columns(3)
@@ -580,13 +635,32 @@ if page == "帝王木獵人":
                 with m_cols[5]:
                     if st.button("✈️", key=f"up_{ch_name}", use_container_width=True):
                         try:
-                            # 這裡使用 dt_class 確保與你前面的 import 一致
-                            new_dt = dt_class.now(tw_tz).replace(hour=int(h), minute=int(m), second=int(s),
-                                                                 microsecond=0)
-                            st.session_state.boss_data[ch_name].update({"last_death": new_dt, "auto_delay_hours": 0})
+                            # 1. 建立新的日期時間物件 (手動選的時間)
+                            new_dt = dt_class.now(tw_tz).replace(
+                                hour=int(h), minute=int(m), second=int(s), microsecond=0
+                            )
+
+                            # 2. 格式化為顯示字串 (例如 "14:05:30")
+                            time_str = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
+
+                            # 3. 取得頻道數據並更新
+                            ch_data = st.session_state.boss_data[ch_name]
+                            ch_data.update({"last_death": new_dt, "auto_delay_hours": 0})
+
+                            # ✅ 新增：把手動補報的時間塞進歷史紀錄清單
+                            if "history_times" not in ch_data:
+                                ch_data["history_times"] = []
+
+                            ch_data["history_times"].append(time_str)
+
+                            # 限制只留最近 10 筆，避免資料過大
+                            ch_data["history_times"] = ch_data["history_times"][-10:]
+
+                            # 4. 存檔並刷新頁面
                             save_data()
                             st.rerun()
-                        except:
+                        except Exception as e:
+                            # st.error(f"補報出錯: {e}") # 調試用，正常運作後可註解掉
                             pass
 
                 st.markdown('</div>', unsafe_allow_html=True)  # --- 隔離區結束 ---
@@ -598,28 +672,54 @@ if page == "帝王木獵人":
                 if data["last_death"]:
                     b_col1, b_col2 = st.columns([1, 1])
                     with b_col1:
-                        # 這是你原本的「擊殺」按鈕
+                        # 💀 現場擊殺按鈕
                         if st.button("💀 擊殺", key=f"kill_{ch_name}", use_container_width=True, type="primary"):
-                            st.session_state.boss_data[ch_name].update({
+                            now = dt_class.now(tw_tz)
+                            # 建立這次的時間紀錄 (如 "14:05:30")
+                            now_str = now.strftime("%H:%M:%S")
+
+                            # 更新數據
+                            ch_data = st.session_state.boss_data[ch_name]
+                            ch_data.update({
                                 "history": data["last_death"],
-                                "last_death": dt_class.now(tw_tz),
+                                "last_death": now,
                                 "auto_delay_hours": 0
                             })
+
+                            # ✅ 新增：把時間塞進歷史紀錄清單
+                            if "history_times" not in ch_data: ch_data["history_times"] = []
+                            ch_data["history_times"].append(now_str)
+                            ch_data["history_times"] = ch_data["history_times"][-10:]  # 只留最近10筆
+
                             save_data()
                             st.rerun()
+
                     with b_col2:
-                        # 這是你原本的「取消」按鈕
+                        # ↩️ 取消按鈕 (復原)
                         if st.button("↩️ 取消", key=f"undo_{ch_name}", use_container_width=True):
                             if data.get("history"):
-                                st.session_state.boss_data[ch_name].update(
-                                    {"last_death": data["history"], "history": None})
+                                ch_data = st.session_state.boss_data[ch_name]
+                                ch_data.update({"last_death": data["history"], "history": None})
+
+                                # ✅ 新增：既然取消了，也要把歷史紀錄最後一筆刪掉
+                                if ch_data.get("history_times"):
+                                    ch_data["history_times"].pop()
+
                                 save_data()
                                 st.rerun()
                 else:
-                    # 這是原本尚無紀錄時的按鈕
+                    # 🏁 初始開始計時
                     if st.button("🏁 開始計時 ", key=f"start_{ch_name}", use_container_width=True, type="primary"):
-                        st.session_state.boss_data[ch_name].update(
-                            {"last_death": dt_class.now(tw_tz), "auto_delay_hours": 0})
+                        now = dt_class.now(tw_tz)
+                        now_str = now.strftime("%H:%M:%S")
+
+                        ch_data = st.session_state.boss_data[ch_name]
+                        ch_data.update({"last_death": now, "auto_delay_hours": 0})
+
+                        # ✅ 新增：紀錄第一次開始的時間
+                        if "history_times" not in ch_data: ch_data["history_times"] = []
+                        ch_data["history_times"].append(now_str)
+
                         save_data()
                         st.rerun()
 
