@@ -911,9 +911,22 @@ if page == "野王時間表":
                     new_loc = c3.selectbox(f"地點", item_options, index=item_options.index(current_loc),
                                            key=f"l_{area_key}_{target_day}_{i}", label_visibility="collapsed")
 
-                    note_key = row[2] if len(row) > 2 else f"note_{area_key}_{target_day}_{i}"
-                    new_note = c4.text_input("備註", value=st.session_state.loc_notes.get(note_key, ""),
-                                             key=f"nt_{area_key}_{target_day}_{i}", label_visibility="collapsed")
+
+                    raw_id = row[2] if len(row) > 2 else f"{i}" # 1. 強制讓 note_key 包含日期資訊，不論 row[2] 是否存在
+                    # ✅ 關鍵：把 target_day 放在最前面或強制組合，確保不同天絕對不同 Key
+                    note_key = f"note_{target_day}_{area_key}_{raw_id}"
+
+                    # 2. 渲染輸入框
+                    new_note = c4.text_input(
+                        "備註",
+                        value=st.session_state.loc_notes.get(note_key, ""),
+                        # ✅ 這裡的 key 也要跟著 note_key 走，避免 Streamlit 元件衝突
+                        key=f"nt_{note_key}",
+                        label_visibility="collapsed",
+                        autocomplete="off"  # 告訴瀏覽器不要記憶你打過的字
+                    )
+
+                    # 3. 儲存回 Session State
                     st.session_state.loc_notes[note_key] = new_note
 
                     if c5.button("🗑️", key=f"del_{area_key}_{target_day}_{i}"):
