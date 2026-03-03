@@ -492,53 +492,62 @@ def timer_logic(ch_name):
         """, unsafe_allow_html=True)
         return  # 結束函式
 
-    # 2. 有紀錄時的邏輯計算
+    # --- 2. 有紀錄時的邏輯計算 ---
     last_death = data["last_death"]
     now = dt_class.now(tw_tz)
-    elapsed_mins = (now - last_death).total_seconds() / 60
 
-    COOLING_LIMIT = 120  # 2小時
-    WINDOW_LIMIT = 300  # 5小時
+    # ✅ 核心修正：強制檢查 last_death 是否帶有時區
+    if last_death is not None:
+        # 如果 last_death 是 Naive (沒有時區)，就幫它補上台灣時區
+        if last_death.tzinfo is None:
+            last_death = last_death.replace(tzinfo=tw_tz)
 
-    # --- 階段 A: 冷卻中 (0 ~ 120 分鐘) ---
-    if elapsed_mins < COOLING_LIMIT:
-        # 修正：計算總剩餘秒數，而不是只有分鐘
-        remaining_seconds = int((COOLING_LIMIT * 60) - (now - last_death).total_seconds())
-        # 使用 str(timedelta) 格式化總秒數
-        time_display = str(timedelta(seconds=remaining_seconds))
+        # 現在兩者都有時區了，計算就不會噴錯
+        diff_delta = now - last_death
+        elapsed_mins = diff_delta.total_seconds() / 60
 
-        st.markdown(f"""
-                <div style="{box_style} background: rgba(100, 100, 100, 0.1); border: 2px solid #666;">
-                    <div style="color: #999; font-size: 16px; font-weight: bold;">❄️ BOSS 冷卻中</div>
-                    <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">
-                        {time_display}
+        COOLING_LIMIT = 120  # 2小時
+        WINDOW_LIMIT = 300  # 5小時
+
+        # --- 階段 A: 冷卻中 (0 ~ 120 分鐘) ---
+        if elapsed_mins < COOLING_LIMIT:
+            # 修正：使用剛剛算好的 diff_delta 避免重複計算
+            remaining_seconds = int((COOLING_LIMIT * 60) - diff_delta.total_seconds())
+            # 格式化顯示 (00:00:00)
+            time_display = str(timedelta(seconds=max(0, remaining_seconds)))
+
+            st.markdown(f"""
+                    <div style="{box_style} background: rgba(100, 100, 100, 0.1); border: 2px solid #666;">
+                        <div style="color: #999; font-size: 16px; font-weight: bold;">❄️ BOSS 冷卻中</div>
+                        <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">
+                            {time_display}
+                        </div>
+                        <div style="color: #666; font-size: 13px;">距離監督窗口開啟還有一段時間</div>
                     </div>
-                    <div style="color: #666; font-size: 13px;">距離監督窗口開啟還有一段時間</div>
+                """, unsafe_allow_html=True)
+
+        # --- 階段 B: 監督視窗開啟 (120 ~ 300 分鐘) ---
+        elif COOLING_LIMIT <= elapsed_mins <= WINDOW_LIMIT:
+            in_window_mins = int(elapsed_mins - COOLING_LIMIT)
+            st.markdown(f"""
+                <div style="{box_style} background: rgba(0, 255, 136, 0.1); border: 2px solid #00ff88; box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);">
+                    <div style="color: #00ff88; font-size: 20px; font-weight: bold;">👁️ 監督視窗已開啟</div>
+                    <div style="color: #fff; font-size: 16px; margin: 10px 0;">BOSS 隨時可能重生，請守點</div>
+                    <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 5px; font-size: 16px; font-weight: bold;">
+                        窗口已持續: {in_window_mins} 分鐘
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
 
-    # --- 階段 B: 監督視窗開啟 (120 ~ 300 分鐘) ---
-    elif COOLING_LIMIT <= elapsed_mins <= WINDOW_LIMIT:
-        in_window_mins = int(elapsed_mins - COOLING_LIMIT)
-        st.markdown(f"""
-            <div style="{box_style} background: rgba(0, 255, 136, 0.1); border: 2px solid #00ff88; box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);">
-                <div style="color: #00ff88; font-size: 20px; font-weight: bold;">👁️ 監督視窗已開啟</div>
-                <div style="color: #fff; font-size: 16px; margin: 10px 0;">BOSS 隨時可能重生，請守點</div>
-                <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 5px; font-size: 16px; font-weight: bold;">
-                    窗口已持續: {in_window_mins} 分鐘
+        # --- 階段 C: 時間丟失 (超過 300 分鐘) ---
+        else:
+            st.markdown(f"""
+                <div style="{box_style} background: rgba(255, 75, 75, 0.1); border: 2px solid #ff4b4b;">
+                    <div style="color: #ff4b4b; font-size: 20px; font-weight: bold;">❌ 時間已丟失</div>
+                    <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">00:00:00</div>
+                    <div style="color: #888; font-size: 13px;">已超過 5 小時重生區間，請重新回報</div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    # --- 階段 C: 時間丟失 (超過 300 分鐘) ---
-    else:
-        st.markdown(f"""
-            <div style="{box_style} background: rgba(255, 75, 75, 0.1); border: 2px solid #ff4b4b;">
-                <div style="color: #ff4b4b; font-size: 20px; font-weight: bold;">❌ 時間已丟失</div>
-                <div style="color: #fff; font-size: 45px; font-family: 'Courier New', monospace; font-weight: bold; margin: 5px 0;">00:00:00</div>
-                <div style="color: #888; font-size: 13px;">已超過 5 小時重生區間，請重新回報</div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
 
 # --- 7. 各頁面功能 ---
@@ -547,11 +556,11 @@ if page == "帝王木獵人":
 
     if st.session_state.is_admin:
         with st.container(border=True):
-            st.markdown("#### 📊 內部數據監測 (最近 5 次通報)")
+            st.markdown("#### 📊 內部數據監測 (最近 5 次通報與間隔)")
             sc = st.columns(3)
             for i, (ch, val) in enumerate(st.session_state.boss_data.items()):
                 with sc[i % 3]:
-                    # 1. 取得重生間隔平均值 (你原本的邏輯)
+                    # 1. 取得平均值
                     stats = val.get("history_stats", [])
                     if stats:
                         avg_val = sum(stats) / len(stats)
@@ -559,29 +568,90 @@ if page == "帝王木獵人":
                     else:
                         avg_txt = "尚無數據"
 
-                    # 2. 取得最近 5 次的通報時間 (假設存在 history_times 裡)
-                    # 如果你還沒存過時間，等等看下方的「儲存邏輯」修改
-                    history_times = val.get("history_times", [])[-5:][::-1]  # 取最後5筆並反轉
+                    # 2. 核心：計算間隔並建立時間軸 HTML
+                    history_times = val.get("history_times", [])[-5:][::-1]  # 新到舊
+                    time_軸_html = '<div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
 
-                    # 3. 建立時間標籤的 HTML
                     if history_times:
-                        time_tags = "".join([
-                            f'<div style="background:#2d2d38; border:1px solid #444; border-radius:4px; margin:2px; font-size:12px; color:#aaa;">{t}</div>'
-                            for t in history_times
-                        ])
-                    else:
-                        time_tags = '<div style="color:#666; font-size:12px;">暫無紀錄</div>'
+                        for idx in range(len(history_times)):
+                            t_curr = history_times[idx]
+                            # 時間點方塊
+                            time_軸_html += f'<div style="background:#2d2d38; border:1px solid #6c5ce7; border-radius:4px; padding:2px 8px; font-size:12px; color:#fff; width:90%; text-align:center;">{t_curr}</div>'
 
-                    # 4. 渲染顯示
+                            # 計算與下一筆的間隔
+                            if idx < len(history_times) - 1:
+                                try:
+                                    fmt = "%H:%M:%S"
+                                    d1 = dt_class.strptime(t_curr, fmt)
+                                    d2 = dt_class.strptime(history_times[idx + 1], fmt)
+                                    diff_sec = (d1 - d2).total_seconds()
+                                    if diff_sec < 0: diff_sec += 86400
+                                    gap_h, gap_m = int(diff_sec // 3600), int((diff_sec % 3600) // 60)
+
+                                    # 間隔標籤
+                                    time_軸_html += f'''
+                                        <div style="border-left:1px dashed #555; height:8px;"></div>
+                                        <div style="background:rgba(255,165,0,0.1); color:#ffa500; border:0.5px solid #ffa500; border-radius:10px; padding:0px 6px; font-size:9px; font-weight:bold;">⏱️ {gap_h}h {gap_m}m</div>
+                                        <div style="border-left:1px dashed #555; height:8px;"></div>
+                                    '''
+                                except:
+                                    pass
+                    else:
+                        time_軸_html += '<div style="color:#666; font-size:12px; padding:10px;">暫無紀錄</div>'
+                    time_軸_html += '</div>'
+
+                    # 3. 渲染外框 (HTML 顯示部分)
                     st.markdown(f"""
-                        <div style="border: 1px solid #464855; border-radius: 10px; padding: 10px; background: rgba(255,165,0,0.05); text-align: center;">
-                            <div style="color:#ffa500; font-weight:bold; margin-bottom:5px;">📍 {ch}</div>
-                            <div style="font-size:13px; color:#fff; margin-bottom:8px;">平均間隔: {avg_txt}</div>
-                            <hr style="border:0.1px solid #444; margin:5px 0;">
-                            <div style="font-size:11px; color:#888; margin-bottom:5px;">近期紀錄</div>
-                            {time_tags}
-                        </div>
-                    """, unsafe_allow_html=True)
+                                        <div style="border: 1px solid #464855; border-radius: 10px; padding: 10px; background: rgba(255,165,0,0.05); margin-bottom: 10px;">
+                                            <div style="color:#ffa500; font-weight:bold; text-align:center; margin-bottom:5px;">📍 {ch}</div>
+                                            <div style="font-size:12px; color:#aaa; text-align:center; margin-bottom:8px;">平均間隔: {avg_txt}</div>
+                                            <hr style="border:0.1px solid #444; margin:8px 0;">
+                                            {time_軸_html}
+                                        </div>
+                                    """, unsafe_allow_html=True)
+
+                    # ✅ 4. 新增：管理員手動刪除按鈕 (緊接在方框下方)
+                    if st.button(f"🗑️ 刪除 {ch} 最後一筆", key=f"del_btn_{ch}", use_container_width=True):
+                        # 取得該頻道的原始資料參考
+                        target_ch = st.session_state.boss_data[ch]
+
+                        if target_ch.get("history_times") and len(target_ch["history_times"]) > 0:
+                            # A. 移除最上面(最新)的那筆時間紀錄
+                            # 注意：因為顯示時用了 [::-1] 反轉，所以 history_times 的最後一筆就是最新的
+                            target_ch["history_times"].pop()
+
+                            # B. 同步移除最後一筆統計數據 (避免平均值錯誤)
+                            if target_ch.get("history_stats"):
+                                target_ch["history_stats"].pop()
+
+                            # C. 重要：將計時器狀態復原到「刪除後」的最末端時間
+                            if target_ch["history_times"]:
+                                new_last_t = target_ch["history_times"][-1]
+                                try:
+                                    # 取得現在帶時區的時間
+                                    now_dt = dt_class.now(tw_tz)
+
+                                    # 先解析時間，然後用 replace 換成今天的年月日
+                                    # 關鍵點：最後加上 .replace(tzinfo=tw_tz) 或是直接用 localize
+                                    parsed_t = dt_class.strptime(new_last_t, "%H:%M:%S")
+
+                                    target_ch["last_death"] = dt_class.now(tw_tz).replace(
+                                        hour=parsed_t.hour,
+                                        minute=parsed_t.minute,
+                                        second=parsed_t.second,
+                                        microsecond=0
+                                    )
+                                except Exception as e:
+                                    st.error(f"時間轉換出錯: {e}")
+                            else:
+                                target_ch["last_death"] = None
+
+                            # D. 存檔並刷新
+                            save_data()
+                            st.toast(f"✅ 已刪除 {ch} 的最後一筆通報")
+                            st.rerun()
+                        else:
+                            st.error("此頻道目前沒有紀錄可以刪除")
                 st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)  # 這是改按鈕與邊框距離
 
     cols = st.columns(3)
@@ -697,11 +767,26 @@ if page == "帝王木獵人":
                     with b_col2:
                         # ↩️ 取消按鈕 (復原)
                         if st.button("↩️ 取消", key=f"undo_{ch_name}", use_container_width=True):
-                            if data.get("history"):
-                                ch_data = st.session_state.boss_data[ch_name]
-                                ch_data.update({"last_death": data["history"], "history": None})
+                            ch_data = st.session_state.boss_data[ch_name]
+                            if ch_data.get("history"):
+                                # 取得備份的歷史紀錄
+                                old_death = ch_data["history"]
 
-                                # ✅ 新增：既然取消了，也要把歷史紀錄最後一筆刪掉
+                                # ✅ 關鍵修正：確保如果是字串，就轉回 datetime 物件
+                                if isinstance(old_death, str):
+                                    try:
+                                        old_death = dt_class.fromisoformat(old_death)
+                                    except:
+                                        # 如果格式不合，嘗試另一種常見格式
+                                        old_death = dt_class.strptime(old_death, "%Y-%m-%d %H:%M:%S")
+
+                                # 執行復原
+                                ch_data.update({
+                                    "last_death": old_death,
+                                    "history": None
+                                })
+
+                                # 同時移除剛剛錯誤新增的一筆歷史顯示紀錄
                                 if ch_data.get("history_times"):
                                     ch_data["history_times"].pop()
 
