@@ -576,7 +576,7 @@ if page == "帝王木獵人":
                         for idx in range(len(history_times)):
                             t_curr = history_times[idx]
                             # 時間點方塊
-                            time_軸_html += f'<div style="background:#2d2d38; border:1px solid #6c5ce7; border-radius:4px; padding:2px 8px; font-size:12px; color:#fff; width:90%; text-align:center;">{t_curr}</div>'
+                            time_軸_html += f'<div style="background:#2d2d38; border:1px solid #6c5ce7; border-radius:4px; padding:2px 8px; font-size:18px; color:#fff; width:90%; text-align:center;">{t_curr}</div>'
 
                             # 計算與下一筆的間隔
                             if idx < len(history_times) - 1:
@@ -591,7 +591,7 @@ if page == "帝王木獵人":
                                     # 間隔標籤
                                     time_軸_html += f'''
                                         <div style="border-left:1px dashed #555; height:8px;"></div>
-                                        <div style="background:rgba(255,165,0,0.1); color:#ffa500; border:0.5px solid #ffa500; border-radius:10px; padding:0px 6px; font-size:9px; font-weight:bold;">⏱️ {gap_h}h {gap_m}m</div>
+                                        <div style="background:rgba(255,165,0,0.1); color:#ffa500; border:0.5px solid #ffa500; border-radius:10px; padding:0px 6px; font-size:15px; font-weight:bold;">⏱️ {gap_h}h {gap_m}m</div>
                                         <div style="border-left:1px dashed #555; height:8px;"></div>
                                     '''
                                 except:
