@@ -911,31 +911,35 @@ if page == "野王時間表":
                     new_loc = c3.selectbox(f"地點", item_options, index=item_options.index(current_loc),
                                            key=f"l_{area_key}_{target_day}_{i}", label_visibility="collapsed")
 
-
-                    raw_id = row[2] if len(row) > 2 else f"{i}" # 1. 強制讓 note_key 包含日期資訊，不論 row[2] 是否存在
-                    # ✅ 關鍵：把 target_day 放在最前面或強制組合，確保不同天絕對不同 Key
+                    # 1. 強制讓 note_key 包含日期資訊
+                    raw_id = row[2] if len(row) > 2 else f"{i}"
                     note_key = f"note_{target_day}_{area_key}_{raw_id}"
 
-                    # 2. 渲染輸入框
+                    # 2. 渲染輸入框 (✅ 修正：key 加上 i 確保絕對唯一，解決切換天數報錯)
                     new_note = c4.text_input(
                         "備註",
                         value=st.session_state.loc_notes.get(note_key, ""),
-                        # ✅ 這裡的 key 也要跟著 note_key 走，避免 Streamlit 元件衝突
-                        key=f"nt_{note_key}",
+                        key=f"nt_input_{area_key}_{target_day}_{i}",  # <--- 這裡改為最獨特的組合
                         label_visibility="collapsed",
-                        autocomplete="off"  # 告訴瀏覽器不要記憶你打過的字
+                        autocomplete="off"
                     )
 
-                    # 3. 儲存回 Session State
+                    # 3. 儲存回 Session State 暫存
                     st.session_state.loc_notes[note_key] = new_note
 
                     if c5.button("🗑️", key=f"del_{area_key}_{target_day}_{i}"):
                         current_edit_list.pop(i)
+                        # ✅ 修正：刪除時順便清掉暫存，避免下一筆資料抓到舊備註
+                        if note_key in st.session_state.loc_notes:
+                            del st.session_state.loc_notes[note_key]
                         st.session_state.schedules[area_key][target_day] = current_edit_list
                         save_data()
                         st.rerun()
                     else:
-                        updated_list.append([new_time_str, new_loc, note_key, new_is_unsure])
+                        # ✅ 修正：這裡要存入 new_note (文字)，而不是 note_key (標籤名)！
+                        # 這就是為什麼你之前按儲存後備註會變空白的原因
+                        updated_list.append([new_time_str, new_loc, new_note, new_is_unsure])
+
                     st.markdown('<div style="margin-bottom: 10px;"></div>', unsafe_allow_html=True)
 
                 st.divider()
@@ -982,20 +986,30 @@ if page == "野王時間表":
                                 boss_rows_html = ""
                                 for r in sorted_boss_data:
                                     time_str = r[0]
-                                    # 處理問號變色 (野王通常在 r[3])
+                                    # 處理問號變色
                                     if len(r) > 3 and r[3]:
                                         time_str = f"<span style='color: #b87012; font-weight: bold;'>{time_str} (?)</span>"
 
                                     boss_name = r[1]
-                                    # 抓取備註/地點細節 (從 st.session_state.loc_notes 抓取)
-                                    boss_note = st.session_state.loc_notes.get(r[2] if len(r) > 2 else "", "")
-                                    note_html = f" <small style='color:#888;'>({boss_note})</small>" if boss_note else ""
+
+                                    # --- ✅ 修正 1：改為直接讀取 r[2] ---
+                                    raw_note = r[2] if len(r) > 2 else ""
+
+                                    # 精準過濾：如果是系統產生且底線很多的 ID 才去暫存區抓，否則直接用文字
+                                    if isinstance(raw_note, str) and raw_note.startswith("note_") and raw_note.count(
+                                            "_") >= 3:
+                                        boss_note = st.session_state.loc_notes.get(raw_note, "")
+                                    else:
+                                        boss_note = raw_note
+
+                                    # --- ✅ 修正 2：讓備註更明顯 (把顏色從 #888 改成 #FFD700) ---
+                                    note_html = f" <small style='color:#FFD700; opacity:0.8;'>💬 {boss_note}</small>" if boss_note else ""
 
                                     boss_rows_html += f"""
-                                                <tr style="border-bottom:1px solid #333; color:#ccc;">
-                                                    <td style="padding:8px; width:80px; font-weight:bold;">{time_str}</td>
-                                                    <td style="padding:8px;">{boss_name}{note_html}</td>
-                                                </tr>"""
+                                                                <tr style="border-bottom:1px solid #333; color:#ccc;">
+                                                                    <td style="padding:8px; width:80px; font-weight:bold;">{time_str}</td>
+                                                                    <td style="padding:8px;">{boss_name}{note_html}</td>
+                                                                </tr>"""
 
                                 # 渲染 HTML 表格
                                 # ✅ 修正：把高度拉長，並移除內部捲軸限制
@@ -1021,6 +1035,18 @@ if page == "野王時間表":
         for row in sorted_all_day:
             if len(row) < 2: continue
             s_time, loc = row[0], row[1]
+
+            # 1. 抓取原始備註內容
+            raw_note = row[2] if len(row) > 2 else ""
+
+            # 2. ✅ 精準判斷：只有當它是系統產生的長 ID 時，才去暫存區抓
+            # 真正的英文備註（如 "Boss"）底線很少，而系統 ID（如 note_星期四_區域_0）底線很多
+            if isinstance(raw_note, str) and raw_note.startswith("note_") and raw_note.count("_") >= 3:
+                note = st.session_state.loc_notes.get(raw_note, "")
+            else:
+                # 如果是中文、短英文、或是已經儲存過的文字，就直接使用
+                note = raw_note
+
             is_unsure = row[3] if len(row) > 3 else False
 
             try:
@@ -1033,7 +1059,14 @@ if page == "野王時間表":
 
                 # 邏輯：顯示 5 分鐘內重生中，或尚未開始的場次
                 if diff > -5 and display_count < 3:
-                    note = st.session_state.loc_notes.get(row[2] if len(row) > 2 else "", "")
+
+                    # --- 1. 處理備註內容 (剛才改過的部分) ---
+                    raw_note = row[2] if len(row) > 2 else ""
+                    if isinstance(raw_note, str) and raw_note.startswith("note_") and raw_note.count("_") >= 3:
+                        note = st.session_state.loc_notes.get(raw_note, "")
+                    else:
+                        note = raw_note
+
                     s = {"bg": "rgba(255,255,255,0.05)", "c": "white", "txt": "等待中", "sh": "none"}
 
                     if view_day == today_str:
@@ -1045,12 +1078,18 @@ if page == "野王時間表":
 
                     time_display = f"<span style='color: #b87012'>{s_time} (?)</span>" if is_unsure else s_time
 
+                    # --- ✅ 2. 在這裡插入 display_note_html 的定義 ---
+                    display_note_html = f'<br><small style="color:#FFD700; opacity:0.9;">💬 {note}</small>' if note else ''
+
+                    # --- ✅ 3. 修改表格拼接，把 {display_note_html} 塞進去 ---
                     upcoming_rows += f"""
-                                <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
-                                    <td style="padding:15px; font-weight:bold; width:90px; font-size:16px;">{time_display}</td>
-                                    <td style="padding:10px;">{loc}<br><small style="color:#c7ffc7; opacity:0.8;">{note}</small></td>
-                                    <td style="padding:15px; text-align:right; font-weight:bold;">{s['txt']}</td>
-                                </tr>"""
+                                            <tr style="background:{s['bg']}; color:{s['c']}; box-shadow:{s['sh']}; border-bottom:1px solid #444;">
+                                                <td style="padding:15px; font-weight:bold; width:90px; font-size:16px;">{time_display}</td>
+                                                <td style="padding:10px;">
+                                                    {loc}{display_note_html}  
+                                                </td>
+                                                <td style="padding:15px; text-align:right; font-weight:bold;">{s['txt']}</td>
+                                            </tr>"""
                     display_count += 1
             except Exception:
                 continue
@@ -1067,14 +1106,25 @@ if page == "野王時間表":
             all_day_html_list = []
             for r in sorted_all_day:
                 t_str = f"<span style='color: #b87012; font-weight: bold;'>{r[0]} (?)</span>" if (
-                            len(r) > 3 and r[3]) else r[0]
-                note_text = st.session_state.loc_notes.get(r[2] if len(r) > 2 else "", "")
-                row_html = f'<tr style="border-bottom:1px solid #333; color:#ccc;"><td style="padding:10px; width:100px; font-weight:bold;">{t_str}</td><td style="padding:10px;">{r[1]} <span style="font-size:12px; color:#888; margin-left:15px;">{note_text}</span></td></tr>'
+                        len(r) > 3 and r[3]) else r[0]
+
+                # --- ✅ 修正 1：改為直接讀取 r[2] ---
+                raw_note = r[2] if len(r) > 2 else ""
+
+                # 精準過濾系統 ID (確保英文備註也能顯示)
+                if isinstance(raw_note, str) and raw_note.startswith("note_") and raw_note.count("_") >= 3:
+                    note_text = st.session_state.loc_notes.get(raw_note, "")
+                else:
+                    note_text = raw_note
+
+                # --- ✅ 修正 2：調整 HTML 顏色與顯示格式 (改為金色更醒目) ---
+                note_html = f'<span style="font-size:12px; color:#FFD700; margin-left:15px;">💬 {note_text}</span>' if note_text else ""
+
+                row_html = f'<tr style="border-bottom:1px solid #333; color:#ccc;"><td style="padding:10px; width:100px; font-weight:bold;">{t_str}</td><td style="padding:10px;">{r[1]} {note_html}</td></tr>'
                 all_day_html_list.append(row_html)
 
             all_day_rows_final = "".join(all_day_html_list)
             if all_day_rows_final:
-                # ✅ 修正：確保使用 st.components.v1.html 並稍微增加高度
                 st.components.v1.html(
                     f'<div style="max-height:350px; overflow-y:auto; background:#1e1e26;"><table style="width:100%; border-collapse:collapse; color:white; font-family:sans-serif;">{all_day_rows_final}</table></div>',
                     height=350)
