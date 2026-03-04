@@ -476,7 +476,7 @@ with st.sidebar:
     )
 
 # --- 6. 計時器邏輯 ---
-@st.fragment(run_every=1)
+@st.fragment(run_every=60)
 def timer_logic(ch_name):
     data = st.session_state.boss_data[ch_name]
     # ✅ 固定高度為 180px
